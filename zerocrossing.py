@@ -35,11 +35,8 @@ def getCrossingsFromFiles(filenames, rootpath=""):
 
 if __name__ == "__main__":
     # Unittest
-    rootpath = "/Volumes/research/rinberglabspace/Users/Jonathan/"
-    files = [
-        "2P_Data/odor_test/JG24831/a_01_D2019_1_26T18_26_19_beh.h5",
-        "2P_Data/odor_test/JG24831/a_02_D2019_1_26T18_42_55_beh.h5",
-    ]
+    rootpath = "./data/"
+    files = ["190603/1953_1_04_D2019_6_3T12_29_13_odor.h5"]
     # filenames = list(map(lambda x: os.path.join(rootpath, x), files))
     results = getCrossingsFromFiles(files, rootpath)
     assert len(results) == 2
