@@ -5,11 +5,38 @@ import h5py
 import numpy as np
 
 
-def findCrossings(sequence):
+def findAllCrossings(sequence):
     signs = np.sign(sequence)
     next_signs = signs[1:]
     # Prepend False -- first position cannot be a crossing
     crossings = np.append(False, signs[:-1] != next_signs)
+    return crossings
+
+
+def findCrossings(sequence, window=20, minWidth=5):
+    """Return mask of sequence where series of window positive values is followed by
+        window negative entries.
+
+    Arguments:
+        sequence {[numerical]} -- Sequence of values.
+
+    Keyword Arguments:
+        window {int} -- Length of positive then negative streaks to test for. (default:
+            {20})
+
+    Returns:
+        [bool] -- Boolean mask of sequence.
+    """
+    assert window > 0
+    assert minWidth > 0
+    sequence = np.array(sequence)
+    # Preload with Falses
+    posWindow = np.zeros((len(sequence),), dtype=bool)
+    negWindow = np.zeros((len(sequence),), dtype=bool)
+    for i in range(minWidth, len(sequence) - minWidth):
+        posWindow[i] = all(sequence[max(0, i - window) : i] >= 0)
+        negWindow[i] = all(sequence[i : min(len(sequence), i + window)] <= 0)
+    crossings = np.logical_and(posWindow, negWindow)
     return crossings
 
 
