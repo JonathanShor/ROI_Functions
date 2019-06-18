@@ -4,6 +4,8 @@ import glob
 
 import numpy as np
 from skimage import io
+import pandas as pd
+import h5py
 
 
 def get_masks(maskPattern="*.bmp"):
@@ -90,11 +92,6 @@ def get_dF_F(timeseries, width=20):
     return dF
 
 
-# Keeping everything in a masked original full FOV too memory hungry
-# (even with sparse arrays?)
-# Alt: cut up to bounding boxes for each ROI
-
-
 def open_TIFF_stack(tiffsPattern="*.tif*"):
     """Open and concatenate a set of tiffs.
 
@@ -110,6 +107,40 @@ def open_TIFF_stack(tiffsPattern="*.tif*"):
         next = io.imread(fname)
         stack = np.concatenate((stack, next), axis=0)
     return stack
+
+
+def get_trials_metadata(h5Filename):
+    trialsMeta = pd.read_hdf(h5Filename, key="Trials")
+    return trialsMeta
+
+
+def get_flatten_trial_data(h5Filename, key):
+    """Extract data for key from all Trials in h5Filename.
+
+    Arguments:
+        h5Filename {str} -- Path to h5 file.
+
+    Returns:
+        ndarray -- Flat ndarray of the key data.
+    """
+    with h5py.File(h5Filename, "r") as h5File:
+        # Assumes h5File contains Trial000# keys and one Trials key
+        numTrials = len(h5File)
+        keyData = np.empty(
+            0, dtype=h5File["Trial{:04d}".format(numTrials - 1)][key][0].dtype
+        )
+        for i_trial in range(1, numTrials):
+            trial = h5File["Trial{:04d}".format(i_trial)]
+            for data in trial[key]:
+                keyData = np.append(keyData, data)
+    return keyData
+
+
+def frame_from_timestamp(h5Filename, timestamps):
+    frameTriggers = get_flatten_trial_data(h5Filename, "frame_triggers")
+    sorters = np.argsort(frameTriggers, kind="mergesort")
+    # assert all(frameTriggers == np.sort(frameTriggers))
+    return np.searchsorted(frameTriggers, timestamps, sorter=sorters)
 
 
 def process(tiffPattern, maskDir):
