@@ -2,10 +2,10 @@
 """
 import glob
 
-import numpy as np
-from skimage import io
-import pandas as pd
 import h5py
+import numpy as np
+import pandas as pd
+from skimage import io
 
 
 def get_masks(maskPattern="*.bmp"):
@@ -242,12 +242,3 @@ def upsample(signal, frameTimpstamps, targetFramerate=1.0):
     )
     assert not np.any(np.isnan(upsampledSignal))
     return upsampledSignal
-
-
-def process(tiffPattern, maskDir, h5Filename):
-    timeseries = open_TIFF_stack(tiffPattern)
-    masks = get_masks(maskDir)
-    ROIaverages = cut_to_averages(timeseries, masks)
-    frameTriggers = get_flatten_trial_data(h5Filename, "frame_triggers", clean=True)
-    dF_F = get_dF_F(ROIaverages)
-    return dF_F
