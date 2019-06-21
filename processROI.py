@@ -219,6 +219,31 @@ def frame_from_timestamp(frameTriggers, timestamps):
     return np.searchsorted(frameTriggers, timestamps, sorter=sorters)
 
 
+def upsample(signal, frameTimpstamps, targetFramerate=1.0):
+    """Linearly upsample a signal.
+
+    Note: May have difficulty with non-integer targetFramerates in some corner cases.
+
+    Arguments:
+        signal {[float]} -- Source signal.
+        frameTimpstamps {[int]} -- Timestamps for each sample in signal. Required to
+            be in ascending order and have no duplicate values.
+        targetFramerate {float} -- Framerate to achieve.
+
+    Returns:
+        ndarray -- Upsampled signal.
+    """
+    targetTimestamps = np.append(
+        np.round(np.arange(frameTimpstamps[0], frameTimpstamps[-1], targetFramerate)),
+        frameTimpstamps[-1],
+    )
+    upsampledSignal = np.interp(
+        targetTimestamps, frameTimpstamps, signal, right=np.nan, left=np.nan
+    )
+    assert not np.any(np.isnan(upsampledSignal))
+    return upsampledSignal
+
+
 def process(tiffPattern, maskDir, h5Filename):
     timeseries = open_TIFF_stack(tiffPattern)
     masks = get_masks(maskDir)
