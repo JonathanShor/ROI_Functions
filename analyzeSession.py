@@ -2,19 +2,38 @@
 """
 import argparse
 
-import ImagingSession
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+sns.set()
+
 import processROI
+from ImagingSession import ImagingSession
+from TiffStack import TiffStack
 
 
 def process(tiffPattern, maskDir, h5Filename):
-    timeseries = processROI.open_TIFF_stack(tiffPattern)
-    masks = processROI.get_masks(maskDir)
-    ROIaverages = processROI.cut_to_averages(timeseries, masks)
+    timeseries = TiffStack(tiffPattern)
+    timeseries.add_masks(maskDir)
+    ROIaverages = timeseries.cut_to_averages()
     frameTriggers = processROI.get_flatten_trial_data(
         h5Filename, "frame_triggers", clean=True
     )
     trialsMeta = processROI.get_trials_metadata(h5Filename)
     session = ImagingSession(trialsMeta["inh_onset"], frameTriggers)
+    meanFs = session.get_meanFs(ROIaverages, frameWindow=2)
+    dF_Fs = {}
+    for condition in meanFs:
+        dF_Fs[condition] = session.get_trial_average_data(
+            ROIaverages, meanFs[condition], condition
+        )
+    lockOffset = list(
+        range(-session.zeroFrame, session.maxSliceWidth - session.zeroFrame)
+    )
+    plt.plot(lockOffset, np.nanmean(dF_Fs[condition], axis=1))
+    plt.title(condition + ", all ROI")
+    plt.show()
 
 
 if __name__ == "__main__":

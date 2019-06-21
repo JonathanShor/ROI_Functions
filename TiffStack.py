@@ -2,9 +2,7 @@
 """
 import glob
 
-import h5py
 import numpy as np
-import pandas as pd
 from skimage import io
 
 
@@ -31,7 +29,7 @@ class TiffStack:
         return stack
 
     def add_masks(self, maskPattern="*.bmp"):
-        self.masks.append(self._get_masks(maskPattern))
+        self.masks += self._get_masks(maskPattern)
 
     def _get_masks(self, maskPattern):
         """Get ROI masks from files.
@@ -58,5 +56,5 @@ class TiffStack:
         """
         ROIaverages = np.empty((self.timeseries.shape[0], len(self.masks)))
         for i_mask, mask in enumerate(self.masks):
-            ROIaverages[:, i_mask] = np.mean(self.timeseries[:, self.mask], axis=1)
+            ROIaverages[:, i_mask] = np.mean(self.timeseries[:, mask], axis=1)
         return ROIaverages
