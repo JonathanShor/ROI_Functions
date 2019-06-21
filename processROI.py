@@ -1,29 +1,8 @@
 """Process ROIs
 """
-import glob
-
 import h5py
 import numpy as np
 import pandas as pd
-from skimage import io
-
-
-def get_masks(maskPattern="*.bmp"):
-    """Get ROI masks from files.
-
-    Keyword Arguments:
-        maskPattern {str} -- File glob pattern. (default: {"*.bmp"})
-
-    Returns:
-        [2d ndarray] -- List of masks.
-    """
-    maskFNames = sorted(glob.glob(maskPattern))
-    masks = []
-    for maskFName in maskFNames:
-        mask = io.imread(maskFName)
-        invMask = mask == 0
-        masks += [mask] if np.sum(mask) < np.sum(invMask) else [invMask]
-    return masks
 
 
 def get_bounds_index(mask, maxBound):
@@ -54,22 +33,6 @@ def cut_to_bounding_boxes(timeseries, masks):
     return ROIs
 
 
-def cut_to_averages(timeseries, masks):
-    """Get average intensity of each ROI at each frame.
-
-    Arguments:
-        timeseries {ndarray} -- Source timeseries. First dimension is time.
-        masks {[ndarray]} -- Sequence of binary masks.
-
-    Returns:
-        ndarray -- Frames by ROI.
-    """
-    ROIaverages = np.empty((timeseries.shape[0], len(masks)))
-    for i_mask, mask in enumerate(masks):
-        ROIaverages[:, i_mask] = np.mean(timeseries[:, mask], axis=1)
-    return ROIaverages
-
-
 def get_dF_F(timeseries, width=20):
     """Calculate dF/F using local temporal window mean F.
 
@@ -90,23 +53,6 @@ def get_dF_F(timeseries, width=20):
     dF = (timeseries - meanF) / meanF
     dF = np.nan_to_num(dF)
     return dF
-
-
-def open_TIFF_stack(tiffsPattern="*.tif*"):
-    """Open and concatenate a set of tiffs.
-
-    Keyword Arguments:
-        tiffsPattern {str} -- File glob pattern. (default: {"*.tif*"})
-
-    Returns:
-        ndarray -- Timeseries (frames by x-coord by y-coord).
-    """
-    tiffFNames = sorted(glob.glob(tiffsPattern))
-    stack = io.imread(tiffFNames[0])
-    for fname in tiffFNames[1:]:
-        next = io.imread(fname)
-        stack = np.concatenate((stack, next), axis=0)
-    return stack
 
 
 def get_trials_metadata(h5Filename):
