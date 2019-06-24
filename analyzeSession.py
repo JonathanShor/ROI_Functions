@@ -2,11 +2,9 @@
 """
 import argparse
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 import seaborn as sns
-
-sns.set()
 
 import processROI
 from ImagingSession import ImagingSession
@@ -28,12 +26,48 @@ def process(tiffPattern, maskDir, h5Filename):
         dF_Fs[condition] = session.get_trial_average_data(
             ROIaverages, meanFs[condition], condition
         )
-    lockOffset = list(
-        range(-session.zeroFrame, session.maxSliceWidth - session.zeroFrame)
-    )
-    plt.plot(lockOffset, np.nanmean(dF_Fs[condition], axis=1))
-    plt.title(condition + ", all ROI")
-    plt.show()
+    return dF_Fs, session
+
+
+def pick_layout(numPlots):
+    numColumns = np.round(np.sqrt(numPlots))
+    numRows = np.ceil(numPlots / numColumns)
+    return int(numRows), int(numColumns)
+
+
+def visualize(dF_Fs, session, axis, title="", figDims=(10, 9)):
+    """Generate plots of dF/F traces.
+
+    Each condition is plotted in its own subplot. All subplots in one figure.
+
+    Arguments:
+        dF_Fs {{str: ndarray}} -- Condition: dF/F trace. Typical trace might be frames by
+            trials by ROI, but only constraint is that it play nicely with whatever is
+            passed as axis argument.
+        session {ImageSession} -- Imaging session metadata.
+        axis {int or tuple of ints} -- The axes of each dF/F to sum over.
+
+    Keyword Arguments:
+        title {str} -- Printed above each subplot, along with that subplot's condition.
+            (default: {""})
+        figDims {tuple} -- Dimensions of the figure bounding all subplots (default: {(10,
+            9)})
+
+    Returns:
+        matplotlib.figure.Figure -- The generated figure.
+    """
+    sns.set(rc={"figure.figsize": figDims})
+    numConditions = len(dF_Fs)
+    layout = pick_layout(numConditions)
+    lockOffset = session.get_lock_offset()
+    fig, axarr = plt.subplots(layout[0], layout[1], sharex=True)
+    i_condition = -1
+    for condition, dF_f in dF_Fs.items():
+        i_condition += 1
+        plotLocation = np.unravel_index(i_condition, layout)
+        axarr[plotLocation].plot(lockOffset, np.nanmean(dF_Fs[condition], axis=axis))
+        axarr[plotLocation].title.set_text(condition + ", " + title)
+    return fig
 
 
 if __name__ == "__main__":
