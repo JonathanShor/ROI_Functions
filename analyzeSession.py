@@ -36,6 +36,80 @@ def pick_layout(numPlots: int) -> Tuple[int, int]:
     return int(numRows), int(numColumns)
 
 
+def plot_trials_by_ROI_per_condition(
+    dF_Fs: Dict[str, np.ndarray],
+    session: ImagingSession,
+    title: str = "",
+    supTitle: str = "",
+    figDims: Tuple[int, int] = (10, 9),
+    palette: str = "Reds_d",
+    maxSubPlots: int = 25,
+) -> List[plt.Figure]:
+    """Plot all trials for each ROI for each condition.
+
+    Arguments:
+        dF_Fs {Dict[str, np.ndarray]} -- Dict of condition: timeseries
+        session {ImagingSession} -- Session specifics.
+
+    Keyword Arguments:
+        title {str} -- Subplot title (default: {""})
+        supTitle {str} -- Figure title. The condition will be suffixed to it. (default: {""})
+        figDims {Tuple[int, int]} -- Size of figures in inches. (default: {(10, 9)})
+        palette {str} -- Seaborn palette for plot lines. (default: {"Reds_d"})
+        maxSubPlots {int} -- Max number of subplots per figure (default: {25})
+
+    Returns:
+        List[plt.Figure] -- List of figures produce.
+    """
+    sns.set(rc={"figure.figsize": figDims})
+    conditions = tuple(dF_Fs)
+    figs = []
+    for condition in conditions:
+        dF_F = dF_Fs[condition]
+        numTrials = dF_F.shape[1]
+        sns.set_palette(palette, numTrials)
+        numROI = dF_F.shape[2]
+        for i_fig in range(int(np.ceil(numROI / maxSubPlots))):
+            ROIOffset = maxSubPlots * i_fig
+            selectedROIs = list(
+                range(0 + ROIOffset, min(maxSubPlots + ROIOffset, numROI))
+            )
+            fig = generate_trials_by_ROI_per_condition(
+                dF_F, session, title, selectedROIs
+            )
+            fig.legend(session.trialGroups[condition], loc="lower right")
+            fig.suptitle(supTitle + f" for {condition}")
+            figs.append(fig)
+    return figs
+
+
+def generate_trials_by_ROI_per_condition(
+    dF_Fs: np.ndarray,
+    session: ImagingSession,
+    title: str,
+    selectedROIs: Sequence[int],
+    alpha=0.5,
+) -> plt.Figure:
+    numROI = len(selectedROIs)
+    numPlots = numROI
+    layout = pick_layout(numPlots)
+    fig, axarr = plt.subplots(layout[0], layout[1], sharex=True, squeeze=False)
+    lockOffset = session.get_lock_offset()
+    for i_ROI, roi in enumerate(selectedROIs):
+        plotLocation = np.unravel_index(i_ROI, layout)
+        axarr[plotLocation].title.set_text("ROI #" + str(roi) + ", " + title)
+        plotData = dF_Fs[:, :, roi]
+        plot_dF_F_timeseries(
+            axarr[plotLocation], lockOffset, np.squeeze(plotData), alpha=alpha
+        )
+        # Keep subplot axis labels only for edge plots; minimize figure clutter
+        if plotLocation[1] > 0:
+            axarr[plotLocation].set_ylabel("")
+        if i_ROI < (numPlots - layout[1]):
+            axarr[plotLocation].set_xlabel("")
+    return fig
+
+
 def plot_conditions_by_ROI(
     dF_Fs: Dict[str, np.ndarray],
     session: ImagingSession,
