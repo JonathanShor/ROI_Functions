@@ -12,7 +12,7 @@ from ImagingSession import ImagingSession
 from TiffStack import TiffStack
 
 
-def process(tiffPattern, maskDir, h5Filename):
+def process(tiffPattern, maskDir, h5Filename, sessionDetails):
     timeseries = TiffStack(tiffPattern)
     timeseries.add_masks(maskDir)
     ROIaverages = timeseries.cut_to_averages()
@@ -20,7 +20,7 @@ def process(tiffPattern, maskDir, h5Filename):
         h5Filename, "frame_triggers", clean=True
     )
     trialsMeta = processROI.get_trials_metadata(h5Filename)
-    session = ImagingSession(trialsMeta["inh_onset"], frameTriggers)
+    session = ImagingSession(trialsMeta["inh_onset"], frameTriggers, sessionDetails)
     meanFs = session.get_meanFs(ROIaverages, frameWindow=2)
     dF_Fs = {}
     for condition in meanFs:
@@ -68,7 +68,7 @@ def generate_conditions_by_ROI_plot(
     numROI = len(selectedROIs)
     numPlots = numROI
     layout = pick_layout(numPlots)
-    fig, axarr = plt.subplots(layout[0], layout[1], sharex=True)
+    fig, axarr = plt.subplots(layout[0], layout[1], sharex=True, squeeze=False)
     lockOffset = session.get_lock_offset()
     for i_ROI, roi in enumerate(selectedROIs):
         plotLocation = np.unravel_index(i_ROI, layout)
@@ -127,7 +127,7 @@ def visualize_conditions(
     sns.set(rc={"figure.figsize": figDims})
     numLines = max(np.mean(dF_Fs[list(dF_Fs)[0]], axis=axis, keepdims=True).shape[1:])
     sns.set_palette(palette, numLines)
-    fig, axarr = plt.subplots(layout[0], layout[1], sharex=True)
+    fig, axarr = plt.subplots(layout[0], layout[1], sharex=True, squeeze=False)
     i_condition = -1
     for condition, dF_f in dF_Fs.items():
         i_condition += 1

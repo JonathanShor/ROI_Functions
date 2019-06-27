@@ -1,8 +1,12 @@
-"""Manages imaging session details.
+"""Manages imaging session processing.
 """
+from typing import Sequence, Union
+
 import numpy as np
 import pandas as pd
+
 import processROI
+from SessionDetails import SessionDetails
 from TiffStack import TiffStack
 
 
@@ -11,20 +15,8 @@ class ImagingSession:
 
     Parameters:
         trialAlignmentTimes {pd.Series} --
-        frameTimestamps {} --
-        numBlocks {int} -- (default: {3})
-        numTrials {int} --  (default: {45})
-        blockTemplate {dict} --   (default: {
-            "100% A, 0% B": [2, 15],
-            "90% A, 10% B": [3, 14],
-            "75% A, 25% B": [4, 13],
-            "50% A, 50% B": [5, 12],
-            "25% A, 75% B": [6, 11],
-            "10% A, 90% B": [7, 10],
-            "0% A, 100% B": [8, 9],
-        })
-        preWindow {int} --  (default: {500})
-        postWindow {int} --  (default: {1500})
+        frameTimestamps {Sequence[float]} --
+        sessionDetails {SessionDetails} -- Metadata for session.
         timeseries -- If provided, should be either a tiffPattern to create a new
             TifFStack object, or should be a TiffStack object itself.
 
@@ -35,42 +27,29 @@ class ImagingSession:
 
     def __init__(
         self,
-        trialAlignmentTimes,  # Must be pd.Series
-        frameTimestamps,
-        numBlocks=3,
-        numTrials=45,
-        blockTemplate={
-            "100% A, 0% B": [2, 15],
-            "90% A, 10% B": [3, 14],
-            "75% A, 25% B": [4, 13],
-            "50% A, 50% B": [5, 12],
-            "25% A, 75% B": [6, 11],
-            "10% A, 90% B": [7, 10],
-            "0% A, 100% B": [8, 9],
-        },
-        preWindow=500,
-        postWindow=1500,
-        timeseries=None,
-    ):
-        # self.trialAlignmentTimes = trialAlignmentTimes
-        self.blockTemplate = blockTemplate
-        self.numBlocks = numBlocks
-        self.numTrials = numTrials
-        self.preWindow = preWindow
-        self.postWindow = postWindow
+        trialAlignmentTimes: pd.Series,
+        frameTimestamps: Sequence[float],
+        sessionDetails: SessionDetails,
+        timeseries: Union[str, TiffStack] = None,
+    ) -> None:
+        self.sessionDetails = sessionDetails
 
         try:
             self.timeseries = TiffStack(timeseries)
         except TypeError:
-            self.timeseries = timeseries
+            if timeseries:
+                self.timeseries = timeseries
 
         trialGroups = {
             condition: (
-                np.tile(value, (numBlocks, 1))
-                + (np.arange(numBlocks) * numTrials // numBlocks).reshape(numBlocks, 1)
+                np.tile(value, (sessionDetails.numCycles, 1))
+                + (
+                    np.arange(sessionDetails.numCycles)
+                    * sessionDetails.numTrialsPerCycles
+                ).reshape(sessionDetails.numCycles, 1)
             ).flatten()
             - 1
-            for condition, value in blockTemplate.items()
+            for condition, value in sessionDetails.cycleTemplate.items()
         }
         self.trialGroups = pd.DataFrame(data=trialGroups)
         self.set_timestamps(trialAlignmentTimes)
@@ -82,10 +61,12 @@ class ImagingSession:
         trialTimelocks = pd.DataFrame()
         for condition in self.trialGroups:
             trialPreTimelocks[condition] = (
-                timelocks.iloc[self.trialGroups[condition]].values - self.preWindow
+                timelocks.iloc[self.trialGroups[condition]].values
+                - self.sessionDetails.preWindow
             )
             trialPostTimelocks[condition] = (
-                timelocks.iloc[self.trialGroups[condition]].values + self.postWindow
+                timelocks.iloc[self.trialGroups[condition]].values
+                + self.sessionDetails.postWindow
             )
             trialTimelocks[condition] = timelocks.iloc[
                 self.trialGroups[condition]
