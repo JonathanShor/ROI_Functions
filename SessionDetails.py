@@ -25,12 +25,13 @@ class SessionDetails:
     # = {"A": "Ethylbutyrate", "B": "Propionic Acid"}
     preWindow: int = 500
     postWindow: int = 1500
+    title: str = ""
 
 
 HN1953_190603 = SessionDetails(
-    3,
-    15,
-    {
+    numCycles=3,
+    numTrialsPerCycles=15,
+    cycleTemplate={
         "100% A, 0% B": [2, 15],
         "90% A, 10% B": [3, 14],
         "71% A, 29% B": [4, 13],
@@ -39,12 +40,13 @@ HN1953_190603 = SessionDetails(
         "10% A, 90% B": [7, 10],
         "0% A, 100% B": [8, 9],
     },
-    {"A": "Ethylbutyrate", "B": "Propionic Acid"},
+    odorNames={"A": "Ethylbutyrate", "B": "Propionic Acid"},
+    title="HN1953_190603",
 )
 HN1953_190617 = SessionDetails(
-    2,
-    32,
-    {
+    numCycles=2,
+    numTrialsPerCycles=32,
+    cycleTemplate={
         "100% A, 0% B": [3, 25],
         "90% A, 10% B": [4, 24],
         "71% A, 29% B": [5, 23],
@@ -60,12 +62,13 @@ HN1953_190617 = SessionDetails(
         "10% C, 90% D": [16, 28],
         "0% C, 100% D": [17, 27],
     },
-    {
+    odorNames={
         "A": "Propionic Acid",
         "B": "Ethylbutyrate",
         "C": "Benzaldehyde",
         "D": "ButyricAcid",
     },
+    title="HN1953_190617",
 )
 HN1953_190617_field2_00003 = SessionDetails(
     numCycles=1,
@@ -75,4 +78,5 @@ HN1953_190617_field2_00003 = SessionDetails(
         "0% A, 100% B": list(range(19, 34)),
     },
     odorNames={"A": "Methylvalerate", "B": "Ethyltiglate"},
+    title="HN1953_190617_field2_00003",
 )

@@ -36,6 +36,43 @@ def pick_layout(numPlots: int) -> Tuple[int, int]:
     return int(numRows), int(numColumns)
 
 
+def plot_downsampled_trials_by_ROI_per_condition(
+    dF_Fs: Dict[str, np.ndarray],
+    session: ImagingSession,
+    downsampleAxis: int,
+    downsampleFactor: int,
+    title: str = "",
+    supTitle: str = "",
+    figDims: Tuple[int, int] = (10, 9),
+    palette: str = "Reds_r",
+    maxSubPlots: int = 25,
+) -> List[plt.Figure]:
+    dF_FsDownsampled: Dict[str, np.ndarray] = {}
+    for condition, dF_F in dF_Fs.items():
+        oldShape = dF_F.shape
+        newShape = (
+            oldShape[:downsampleAxis]
+            + (oldShape[downsampleAxis] // downsampleFactor,)
+            + oldShape[downsampleAxis + 1 :]
+        )
+        dF_FsDownsampled[condition] = processROI.downsample(dF_F, newShape)
+    figs = plot_trials_by_ROI_per_condition(
+        dF_FsDownsampled,
+        session,
+        title=title,
+        supTitle=supTitle,
+        figDims=figDims,
+        palette=palette,
+        maxSubPlots=maxSubPlots,
+    )
+    for fig in figs:
+        for leg in fig.legends:
+            leg.remove()
+        numLines = sum([line.get_ls() == "-" for line in fig.axes[0].get_lines()])
+        fig.legend(list(range(1, numLines + 1)), loc="lower right")
+    return figs
+
+
 def plot_trials_by_ROI_per_condition(
     dF_Fs: Dict[str, np.ndarray],
     session: ImagingSession,
@@ -53,7 +90,8 @@ def plot_trials_by_ROI_per_condition(
 
     Keyword Arguments:
         title {str} -- Subplot title (default: {""})
-        supTitle {str} -- Figure title. The condition will be suffixed to it. (default: {""})
+        supTitle {str} -- Figure title. The condition will be suffixed to it. (default:
+            {""})
         figDims {Tuple[int, int]} -- Size of figures in inches. (default: {(10, 9)})
         palette {str} -- Seaborn palette for plot lines. (default: {"Reds_d"})
         maxSubPlots {int} -- Max number of subplots per figure (default: {25})
@@ -88,7 +126,7 @@ def generate_trials_by_ROI_per_condition(
     session: ImagingSession,
     title: str,
     selectedROIs: Sequence[int],
-    alpha=0.5,
+    alpha=0.8,
 ) -> plt.Figure:
     numROI = len(selectedROIs)
     numPlots = numROI
@@ -107,6 +145,7 @@ def generate_trials_by_ROI_per_condition(
             axarr[plotLocation].set_ylabel("")
         if i_ROI < (numPlots - layout[1]):
             axarr[plotLocation].set_xlabel("")
+    subtitle("Odor key: " + f"{session.sessionDetails.odorNames}".replace("'", ""))
     return fig
 
 
@@ -154,6 +193,7 @@ def generate_conditions_by_ROI_plot(
             axarr[plotLocation].set_ylabel("")
         if i_ROI < (numPlots - layout[1]):
             axarr[plotLocation].set_xlabel("")
+    subtitle("Odor key: " + f"{session.sessionDetails.odorNames}".replace("'", ""))
     return fig
 
 
@@ -172,7 +212,7 @@ def visualize_conditions(
     axis: Union[int, Sequence[int]],
     title="",
     figDims=(10, 9),
-    palette="Spectral",
+    palette="Reds_r",
 ) -> plt.Figure:
     """Generate plots of dF/F traces by condition.
 
@@ -220,10 +260,17 @@ def visualize_conditions(
             axarr[plotLocation].legend(
                 session.trialGroups[condition].values, ncol=2, fontsize="xx-small"
             )
-    plt.figtext(
-        0.4, 0.93, "Legends indicate trial numbers.", style="italic", fontsize="small"
+    subtitle(
+        "Legends indicate trial numbers. Odor key: "
+        + f"{session.sessionDetails.odorNames}".replace("'", "")
     )
     return fig
+
+
+def subtitle(text: str) -> None:
+    plt.figtext(
+        0.5, 0.93, text, style="italic", fontsize="small", horizontalalignment="center"
+    )
 
 
 if __name__ == "__main__":

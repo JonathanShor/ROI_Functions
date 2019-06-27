@@ -1,5 +1,7 @@
 """Process ROIs
 """
+from typing import List, Sequence
+
 import h5py
 import numpy as np
 import pandas as pd
@@ -188,3 +190,14 @@ def upsample(signal, frameTimpstamps, targetFramerate=1.0):
     )
     assert not np.any(np.isnan(upsampledSignal))
     return upsampledSignal
+
+
+def downsample(arr: np.ndarray, newShape: Sequence[int]) -> np.ndarray:
+    assert len(arr.shape) == len(newShape)
+    assert all(
+        [(oldDim % newDim) == 0 for oldDim, newDim in zip(arr.shape, newShape)]
+    ), "All newShape dimensions must evenly divide arr dimensions"
+    shape: List[int] = []
+    for i_dim, size in enumerate(newShape):
+        shape += [size, arr.shape[i_dim] // newShape[i_dim]]
+    return arr.reshape(shape).mean(tuple(range(1, len(newShape) * 2, 2)))
