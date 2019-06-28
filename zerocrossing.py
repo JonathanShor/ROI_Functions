@@ -133,3 +133,4 @@ if __name__ == "__main__":
     T12_29 = results["190603/1953_1_04_D2019_6_3T12_29_13_odor.h5"]
     assert len(T12_29) == 391406
     assert np.all(T12_29[120:125] == [False, True, False, False, False])
+    print("zerocrossing.py unit test completed sucessfully.")

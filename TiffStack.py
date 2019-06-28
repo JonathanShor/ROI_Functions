@@ -1,18 +1,19 @@
 """Manage an imaging session tiff stack and ROI masks.
 """
 import glob
+from typing import List, Sequence
 
 import numpy as np
 from skimage import io
 
 
 class TiffStack:
-    def __init__(self, tiffPattern="*.tif*"):
+    def __init__(self, tiffPattern: str = "*.tif*"):
         self._tiffPattern = tiffPattern
         self.timeseries = self.open_TIFF_stack(tiffPattern)
-        self.masks = []
+        self.masks: List[np.ndarray] = []
 
-    def open_TIFF_stack(self, tiffsPattern):
+    def open_TIFF_stack(self, tiffsPattern: str) -> np.ndarray:
         """Open and concatenate a set of tiffs.
 
         Arguments:
@@ -28,10 +29,10 @@ class TiffStack:
             stack = np.concatenate((stack, next), axis=0)
         return stack
 
-    def add_masks(self, maskPattern="*.bmp"):
+    def add_masks(self, maskPattern: str = "*.bmp"):
         self.masks += self._get_masks(maskPattern)
 
-    def _get_masks(self, maskPattern):
+    def _get_masks(self, maskPattern: str) -> Sequence[np.ndarray]:
         """Get ROI masks from files.
 
         Arguments:
@@ -41,14 +42,14 @@ class TiffStack:
             [2d ndarray] -- List of masks.
         """
         maskFNames = sorted(glob.glob(maskPattern))
-        masks = []
+        masks: List[np.ndarray] = []
         for maskFName in maskFNames:
             mask = io.imread(maskFName)
             invMask = mask == 0
             masks += [mask] if np.sum(mask) < np.sum(invMask) else [invMask]
         return masks
 
-    def cut_to_averages(self):
+    def cut_to_averages(self) -> np.ndarray:
         """Get average intensity of each ROI at each frame.
 
         Returns:

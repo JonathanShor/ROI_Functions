@@ -1,7 +1,6 @@
 """Analyze a 2P imaging session from tiff stack, h5 metadata, and ROI masks.
 """
-import argparse
-from typing import Dict, List, Sequence, Tuple, Union
+from typing import Callable, Dict, List, Mapping, Sequence, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,10 +8,26 @@ import seaborn as sns
 
 import processROI
 from ImagingSession import ImagingSession
+from SessionDetails import SessionDetails
 from TiffStack import TiffStack
 
 
-def process(tiffPattern, maskDir, h5Filename, sessionDetails):
+def process(
+    tiffPattern: str, maskDir: str, h5Filename: str, sessionDetails: SessionDetails
+) -> Tuple[Dict[str, np.ndarray], ImagingSession]:
+    """Process imaging session.
+
+    Assembles ImagingSession and dF/F traces.
+
+    Arguments:
+        tiffPattern {str} -- Path to tiff(s). Shell wildcard characters acceptable.
+        maskDir {str} -- Path to directory containing .bmp ROI masks.
+        h5Filename {str} -- Path to h5 metadata file.
+        sessionDetails {SessionDetails} -- Session metadata.
+
+    Returns:
+        Tuple[Dict[str, np.ndarray], ImagingSession] -- dF/Fs, ImagingSession
+    """
     timeseries = TiffStack(tiffPattern)
     timeseries.add_masks(maskDir)
     ROIaverages = timeseries.cut_to_averages()
@@ -31,6 +46,14 @@ def process(tiffPattern, maskDir, h5Filename, sessionDetails):
 
 
 def pick_layout(numPlots: int) -> Tuple[int, int]:
+    """Define gridsize to fit a number of subplots.
+
+    Arguments:
+        numPlots {int} -- Subplots to be arranged.
+
+    Returns:
+        Tuple[int, int] -- Subplot grid size.
+    """
     numColumns = np.round(np.sqrt(numPlots))
     numRows = np.ceil(numPlots / numColumns)
     return int(numRows), int(numColumns)
@@ -47,6 +70,28 @@ def plot_downsampled_trials_by_ROI_per_condition(
     palette: str = "Reds_r",
     maxSubPlots: int = 25,
 ) -> List[plt.Figure]:
+    """Plot downsampled trials for each ROI for each condition.
+
+    Average groups of consecutive trials for plotting.
+
+    Arguments:
+        dF_Fs {Dict[str, np.ndarray]} -- Dict of condition: timeseries.
+        session {ImagingSession} -- Session specifics.
+        downsampleAxis {int} -- Axis of dF_Fs to be downsampled.
+        downsampleFactor {int} -- This many trials along downsampleAxis in dF_Fs will be
+            averaged together into one trial in the resultant plotted data.
+
+    Keyword Arguments:
+        title {str} -- Subplot title (default: {""})
+        supTitle {str} -- Figure title. The condition will be suffixed to it. (default:
+            {""})
+        figDims {Tuple[int, int]} -- Size of figures in inches. (default: {(10, 9)})
+        palette {str} -- Seaborn palette for plot lines. (default: {"Reds_d"})
+        maxSubPlots {int} -- Max number of subplots per figure (default: {25})
+
+    Returns:
+        List[plt.Figure] -- List of figures produce.
+    """
     dF_FsDownsampled: Dict[str, np.ndarray] = {}
     for condition, dF_F in dF_Fs.items():
         oldShape = dF_F.shape
@@ -112,41 +157,18 @@ def plot_trials_by_ROI_per_condition(
             selectedROIs = list(
                 range(0 + ROIOffset, min(maxSubPlots + ROIOffset, numROI))
             )
-            fig = generate_trials_by_ROI_per_condition(
-                dF_F, session, title, selectedROIs
+            fig = create_ROI_plot(
+                lambda roi: dF_F[:, :, roi],
+                session.get_lock_offset(),
+                session.sessionDetails.odorNames,
+                title,
+                selectedROIs,
+                alpha=0.8,
             )
             fig.legend(session.trialGroups[condition], loc="lower right")
             fig.suptitle(supTitle + f" for {condition}")
             figs.append(fig)
     return figs
-
-
-def generate_trials_by_ROI_per_condition(
-    dF_Fs: np.ndarray,
-    session: ImagingSession,
-    title: str,
-    selectedROIs: Sequence[int],
-    alpha=0.8,
-) -> plt.Figure:
-    numROI = len(selectedROIs)
-    numPlots = numROI
-    layout = pick_layout(numPlots)
-    fig, axarr = plt.subplots(layout[0], layout[1], sharex=True, squeeze=False)
-    lockOffset = session.get_lock_offset()
-    for i_ROI, roi in enumerate(selectedROIs):
-        plotLocation = np.unravel_index(i_ROI, layout)
-        axarr[plotLocation].title.set_text("ROI #" + str(roi) + ", " + title)
-        plotData = dF_Fs[:, :, roi]
-        plot_dF_F_timeseries(
-            axarr[plotLocation], lockOffset, np.squeeze(plotData), alpha=alpha
-        )
-        # Keep subplot axis labels only for edge plots; minimize figure clutter
-        if plotLocation[1] > 0:
-            axarr[plotLocation].set_ylabel("")
-        if i_ROI < (numPlots - layout[1]):
-            axarr[plotLocation].set_xlabel("")
-    subtitle("Odor key: " + f"{session.sessionDetails.odorNames}".replace("'", ""))
-    return fig
 
 
 def plot_conditions_by_ROI(
@@ -157,6 +179,21 @@ def plot_conditions_by_ROI(
     palette: str = "Reds_d",
     maxSubPlots: int = 25,
 ) -> List[plt.Figure]:
+    """Plot trial-mean for each condition on each ROI.
+
+    Arguments:
+        dF_Fs {Dict[str, np.ndarray]} -- Dict of condition: timeseries
+        session {ImagingSession} -- Session specifics.
+
+    Keyword Arguments:
+        title {str} -- Subplot title (default: {""})
+        figDims {Tuple[int, int]} -- Size of figures in inches. (default: {(10, 9)})
+        palette {str} -- Seaborn palette for plot lines. (default: {"Reds_d"})
+        maxSubPlots {int} -- Max number of subplots per figure (default: {25})
+
+    Returns:
+        List[plt.Figure] -- List of figures produce.
+    """
     conditions = tuple(dF_Fs)
     sns.set(rc={"figure.figsize": figDims})
     sns.set_palette(palette, len(conditions))
@@ -166,43 +203,87 @@ def plot_conditions_by_ROI(
     for i_fig in range(int(np.ceil(numROI / maxSubPlots))):
         ROIOffset = maxSubPlots * i_fig
         selectedROIs = list(range(0 + ROIOffset, min(maxSubPlots + ROIOffset, numROI)))
-        fig = generate_conditions_by_ROI_plot(dF_Fs_all, session, title, selectedROIs)
+        fig = create_ROI_plot(
+            lambda roi: np.nanmean(dF_Fs_all[:, :, roi, :], axis=1, keepdims=True),
+            session.get_lock_offset(),
+            session.sessionDetails.odorNames,
+            title,
+            selectedROIs,
+        )
         fig.legend(conditions, loc="lower right")
         figs.append(fig)
     return figs
 
 
-def generate_conditions_by_ROI_plot(
-    dF_Fs_all: np.ndarray,
-    session: ImagingSession,
+def create_ROI_plot(
+    # plotDataGenerator's output's first dimension must match the length of frameAxis
+    plotDataGenerator: Callable[[int], np.ndarray],
+    frameAxis: Sequence[int],
+    odorNames: Mapping[str, str],
     title: str,
     selectedROIs: Sequence[int],
+    alpha=0.8,
+    **plotKwargs,
 ) -> plt.Figure:
+    """Helper function: creates figure with subplots for each selected ROI.
+
+    Arguments:
+        plotDataGenerator {Callable[[int], np.ndarray]} -- Handle to a function that
+            accepts an integer ROI # and returns the corresponding subplot data (y-axis).
+            (Example: (lambda roi: dF_F[:, :, roi]))
+        frameAxis {Sequence[int]} -- Frame index (plot x-axis labels).
+        odorNames {Mapping[str, str]} -- Mapping from odor code in condition names to full
+            odor name.
+        title {str} -- Subplot title. Appears after ROI #.
+        selectedROIs {Sequence[int]} -- Indexes of the ROIs to plot
+
+    Keyword Arguments:
+        alpha {float} -- Transparency of plotted lines. (default: {0.8})
+        **plotKwargs -- Any additional keyword arguments are passed on to plt.plot.
+
+    Returns:
+        plt.Figure -- Resultant figure.
+    """
     numROI = len(selectedROIs)
     numPlots = numROI
     layout = pick_layout(numPlots)
     fig, axarr = plt.subplots(layout[0], layout[1], sharex=True, squeeze=False)
-    lockOffset = session.get_lock_offset()
     for i_ROI, roi in enumerate(selectedROIs):
         plotLocation = np.unravel_index(i_ROI, layout)
         axarr[plotLocation].title.set_text("ROI #" + str(roi) + ", " + title)
-        plotData = np.nanmean(dF_Fs_all[:, :, roi, :], axis=1, keepdims=True)
-        plot_dF_F_timeseries(axarr[plotLocation], lockOffset, np.squeeze(plotData))
+        plotData = plotDataGenerator(roi)
+        plot_dF_F_timeseries(
+            axarr[plotLocation],
+            frameAxis,
+            np.squeeze(plotData),
+            alpha=alpha,
+            **plotKwargs,
+        )
         # Keep subplot axis labels only for edge plots; minimize figure clutter
         if plotLocation[1] > 0:
             axarr[plotLocation].set_ylabel("")
         if i_ROI < (numPlots - layout[1]):
             axarr[plotLocation].set_xlabel("")
-    subtitle("Odor key: " + f"{session.sessionDetails.odorNames}".replace("'", ""))
+    subtitle("Odor key: " + f"{odorNames}".replace("'", ""))
     return fig
 
 
 def plot_dF_F_timeseries(
-    ax: plt.Axes, frameData: Sequence[int], plotData: np.ndarray, alpha=1.0
+    ax: plt.Axes, frameData: Sequence[int], plotData: np.ndarray, **kwargs
 ) -> None:
-    ax.set_xlabel("Frame (ms)")
+    """Plot dF/F timeseries with consistent format.
+
+    Arguments:
+        ax {plt.Axes} -- Axes to plot onto.
+        frameData {Sequence[int]} -- X-axis data.
+        plotData {np.ndarray} -- Y-axis data.
+
+    Keyword Arguments:
+        **plotKwargs -- Any keyword arguments are passed on to plt.plot.
+    """
+    ax.set_xlabel("Frame")
     ax.set_ylabel("dF/F")
-    ax.plot(frameData, np.squeeze(plotData), alpha=alpha)
+    ax.plot(frameData, np.squeeze(plotData), **kwargs)
     ax.plot([frameData[0], frameData[-1]], [0, 0], "--k", zorder=-1)
 
 
@@ -230,6 +311,7 @@ def visualize_conditions(
             (default: {""})
         figDims {tuple} -- Dimensions of the figure bounding all subplots (default: {(10,
             9)})
+        palette {str} -- Seaborn palette for plot lines. (default: {"Reds_r"})
 
     Returns:
         matplotlib.figure.Figure -- The generated figure.
@@ -268,20 +350,13 @@ def visualize_conditions(
 
 
 def subtitle(text: str) -> None:
+    """Create a subtitle on the active plt.Figure.
+
+        Position selected for a plt.subplots figure with Seaborn settings.
+
+    Arguments:
+        text {str} -- Subtitle text.
+    """
     plt.figtext(
         0.5, 0.93, text, style="italic", fontsize="small", horizontalalignment="center"
     )
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--workingDir", default=".", help="Working directory containing tifs to analyze"
-    )
-    parser.add_argument(
-        "--pattern",
-        # Default will include all tif
-        default="*.tif",
-        help="File name pattern to select tifs, i.e. Run0034_00*.tif.",
-    )
-    args = parser.parse_args()

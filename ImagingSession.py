@@ -1,28 +1,40 @@
 """Manages imaging session processing.
 """
-from typing import Sequence, Union
+from typing import Dict, List, Sequence
 
 import numpy as np
 import pandas as pd
 
 import processROI
 from SessionDetails import SessionDetails
-from TiffStack import TiffStack
 
 
 class ImagingSession:
-    """[summary]
+    """Manages imaging session and timelock alignment.
 
     Parameters:
-        trialAlignmentTimes {pd.Series} --
-        frameTimestamps {Sequence[float]} --
+        trialAlignmentTimes {pd.Series} -- Timestamps at which to align each trial.
+        frameTimestamps {Sequence[float]} -- Timestamps of each frame in tiffstack.
         sessionDetails {SessionDetails} -- Metadata for session.
-        timeseries -- If provided, should be either a tiffPattern to create a new
-            TifFStack object, or should be a TiffStack object itself.
 
     Attributes:
         lockFrames {pd.DataFrame} -- List of frame indexes to mean around for each
             condition.
+        preTrialTimestamps {pd.DataFrame} -- Timestamp for start of averaging windows of
+            each trial. Grouped by condition.
+        postTrialTimestamps {pd.DataFrame} -- Timestamp for end of averaging windows of
+            each trial. Grouped by condition.
+        trialAlignments {pd.DataFrame} -- Timestamp for timelock frame of each trial.
+            Grouped by condition.
+        preFrames {pd.DataFrame} -- Tiffstack frame corresponding to start of averaging
+            windows for each trial. Grouped by condition.
+        lockFrames {pd.DataFrame} -- Tiffstack frame corresponding to timelock of each
+            trial. Grouped by condition.
+        postFrames {pd.DataFrame} -- Tiffstack frame corresponding to end of averaging
+            windows for each trial. Grouped by condition.
+        maxSliceWidth {int} -- Widest averaging window in frames.
+        zeroFrame {int} -- The timelock frame's index in the averaging window domain
+            (aka range(maxSliceWidth)).
     """
 
     def __init__(
@@ -30,15 +42,8 @@ class ImagingSession:
         trialAlignmentTimes: pd.Series,
         frameTimestamps: Sequence[float],
         sessionDetails: SessionDetails,
-        timeseries: Union[str, TiffStack] = None,
     ) -> None:
         self.sessionDetails = sessionDetails
-
-        try:
-            self.timeseries = TiffStack(timeseries)
-        except TypeError:
-            if timeseries:
-                self.timeseries = timeseries
 
         trialGroups = {
             condition: (
@@ -52,10 +57,10 @@ class ImagingSession:
             for condition, value in sessionDetails.cycleTemplate.items()
         }
         self.trialGroups = pd.DataFrame(data=trialGroups)
-        self.set_timestamps(trialAlignmentTimes)
-        self.set_frameWindows(frameTimestamps)
+        self._set_timestamps(trialAlignmentTimes)
+        self._set_frameWindows(frameTimestamps)
 
-    def set_timestamps(self, timelocks):
+    def _set_timestamps(self, timelocks: pd.DataFrame) -> None:
         trialPreTimelocks = pd.DataFrame()
         trialPostTimelocks = pd.DataFrame()
         trialTimelocks = pd.DataFrame()
@@ -75,7 +80,7 @@ class ImagingSession:
         self.postTrialTimestamps = trialPostTimelocks
         self.trialAlignments = trialTimelocks
 
-    def set_frameWindows(self, frameTriggers):
+    def _set_frameWindows(self, frameTriggers: Sequence[float]) -> None:
         self.preFrames = pd.DataFrame()
         self.lockFrames = pd.DataFrame()
         self.postFrames = pd.DataFrame()
@@ -84,13 +89,15 @@ class ImagingSession:
                 frameTriggers, self.preTrialTimestamps[condition]
             )
             self.lockFrames[condition] = processROI.frame_from_timestamp(
-                frameTriggers, self.postTrialTimestamps[condition]
-            )
-            self.postFrames[condition] = processROI.frame_from_timestamp(
                 frameTriggers, self.trialAlignments[condition]
             )
+            self.postFrames[condition] = processROI.frame_from_timestamp(
+                frameTriggers, self.postTrialTimestamps[condition]
+            )
 
-    def get_meanFs(self, ROIaverages, frameWindow=2):
+    def get_meanFs(
+        self, ROIaverages: np.ndarray, frameWindow: int = 2
+    ) -> Dict[str, np.ndarray]:
         """Calculate mean signal in a frameWindow around each lockFrame.
 
         Arguments:
@@ -100,7 +107,7 @@ class ImagingSession:
             frameWindow {int} -- Width of window. (default: {2})
 
         Returns:
-            pd.DataFrame -- 2D, lockFrames by ROI, containing mean signal.
+            {str: 2D ndarray} -- 2D, lockFrames by ROI, containing mean signal.
         """
         meanFs = {}
         for condition in self.lockFrames:
@@ -116,22 +123,23 @@ class ImagingSession:
             meanFs[condition] = np.array(meanF)
         return meanFs
 
-    def get_trial_average_data(self, ROIaverages, meanF, condition):
+    def get_trial_average_data(
+        self, ROIaverages: np.ndarray, meanF: np.ndarray, condition: str
+    ) -> np.ndarray:
         numROI = ROIaverages.shape[1]
         numTrials = len(self.lockFrames[condition])
         self.maxSliceWidth = max(
-            [
-                post - pre
-                for pre, post in zip(
-                    self.preFrames[condition], self.postFrames[condition]
-                )
-            ]
+            post - pre
+            for pre, post in zip(self.preFrames[condition], self.postFrames[condition])
         )
         preWindows = [
             slice(pre, lock)
             for pre, lock in zip(self.preFrames[condition], self.lockFrames[condition])
         ]
-        self.zeroFrame = max(window.stop - window.start for window in preWindows)
+        self.zeroFrame = max(
+            lock - pre
+            for pre, lock in zip(self.preFrames[condition], self.lockFrames[condition])
+        )
         trialAverageData = np.zeros((self.maxSliceWidth, numTrials, numROI))
         for i_slice, slce in enumerate(preWindows):
             tempData = ROIaverages[slce, :]
@@ -155,6 +163,11 @@ class ImagingSession:
         dF_F[dF_F == -1] = np.nan
         return dF_F
 
-    def get_lock_offset(self):
+    def get_lock_offset(self) -> List[int]:
+        """Index of frame offsets. Useful as x-axis input for timeseries plots.
+
+        Returns:
+            List[int] -- List of each frame's offset from zeroFrame.
+        """
         lockOffset = list(range(-self.zeroFrame, self.maxSliceWidth - self.zeroFrame))
         return lockOffset

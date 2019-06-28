@@ -1,6 +1,6 @@
 """Process ROIs
 """
-from typing import List, Sequence
+from typing import List, Sequence, Union
 
 import h5py
 import numpy as np
@@ -151,11 +151,13 @@ def clean_frame_trigger_data(data, frameRate=100 / 3):
     return filledData
 
 
-def frame_from_timestamp(frameTriggers, timestamps):
+def frame_from_timestamp(
+    frameTriggers: Sequence[float], timestamps: Union[float, Sequence[float]]
+) -> np.ndarray:
     """Map timestamps to frames
 
     Arguments:
-        frameTriggers {[long]} -- Sequence of (sorted) frame trigger timestamps.
+        frameTriggers {[long]} -- Sequence of frame trigger timestamps.
         timestamps {[long] or long} -- Sequence or scalar of timestamps.
 
     Returns:
