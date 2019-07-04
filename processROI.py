@@ -57,7 +57,7 @@ def get_dF_F(timeseries, width=20):
     return dF
 
 
-def get_trials_metadata(h5Filename):
+def get_trials_metadata(h5Filename: str) -> pd.DataFrame:
     """Retrieve "Trials" metadata from an h5 file.
 
     Arguments:

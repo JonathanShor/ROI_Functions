@@ -8,12 +8,11 @@ import seaborn as sns
 
 import processROI
 from ImagingSession import ImagingSession
-from SessionDetails import SessionDetails
 from TiffStack import TiffStack
 
 
 def process(
-    tiffPattern: str, maskDir: str, h5Filename: str, sessionDetails: SessionDetails
+    tiffPattern: str, maskDir: str, h5Filename: str
 ) -> Tuple[Dict[str, np.ndarray], ImagingSession]:
     """Process imaging session.
 
@@ -23,7 +22,6 @@ def process(
         tiffPattern {str} -- Path to tiff(s). Shell wildcard characters acceptable.
         maskDir {str} -- Path to directory containing .bmp ROI masks.
         h5Filename {str} -- Path to h5 metadata file.
-        sessionDetails {SessionDetails} -- Session metadata.
 
     Returns:
         Tuple[Dict[str, np.ndarray], ImagingSession] -- dF/Fs, ImagingSession
@@ -35,7 +33,7 @@ def process(
         h5Filename, "frame_triggers", clean=True
     )
     trialsMeta = processROI.get_trials_metadata(h5Filename)
-    session = ImagingSession(trialsMeta["inh_onset"], frameTriggers, sessionDetails)
+    session = ImagingSession(trialsMeta["inh_onset"], frameTriggers, h5Filename)
     meanFs = session.get_meanFs(ROIaverages, frameWindow=2)
     dF_Fs = {}
     for condition in meanFs:
@@ -160,7 +158,7 @@ def plot_trials_by_ROI_per_condition(
             fig = create_ROI_plot(
                 lambda roi: dF_F[:, :, roi],
                 session.get_lock_offset(),
-                session.sessionDetails.odorNames,
+                session.odorCodesToNames,
                 title,
                 selectedROIs,
                 alpha=0.8,
@@ -206,7 +204,7 @@ def plot_conditions_by_ROI(
         fig = create_ROI_plot(
             lambda roi: np.nanmean(dF_Fs_all[:, :, roi, :], axis=1, keepdims=True),
             session.get_lock_offset(),
-            session.sessionDetails.odorNames,
+            session.odorCodesToNames,
             title,
             selectedROIs,
         )
@@ -344,7 +342,7 @@ def visualize_conditions(
             )
     subtitle(
         "Legends indicate trial numbers. Odor key: "
-        + f"{session.sessionDetails.odorNames}".replace("'", "")
+        + f"{session.odorCodesToNames}".replace("'", "")
     )
     return fig
 

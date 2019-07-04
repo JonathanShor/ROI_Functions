@@ -1,12 +1,13 @@
 """Manages imaging session processing.
 """
-from typing import Dict, List, Sequence
+from typing import Dict, List, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
 
 import processROI
-from SessionDetails import SessionDetails
+
+IGNORE_ODORS = ["None", "empty"]
 
 
 class ImagingSession:
@@ -15,9 +16,14 @@ class ImagingSession:
     Parameters:
         trialAlignmentTimes {pd.Series} -- Timestamps at which to align each trial.
         frameTimestamps {Sequence[float]} -- Timestamps of each frame in tiffstack.
-        sessionDetails {SessionDetails} -- Metadata for session.
+        h5Filename {str} -- Full filepath of h5 metadata for session.
 
     Attributes:
+        preWindowSize {int} -- Size of pre-timelock averaging window in milliseconds.
+            (default: {500})
+        postWindowSize {int} -- Size of post-timelock averaging window in milliseconds.
+            (default: {1500})
+        title {str} -- Title addendum for figures, if provided. (default: {""})
         lockFrames {pd.DataFrame} -- List of frame indexes to mean around for each
             condition.
         preTrialTimestamps {pd.DataFrame} -- Timestamp for start of averaging windows of
@@ -41,24 +47,65 @@ class ImagingSession:
         self,
         trialAlignmentTimes: pd.Series,
         frameTimestamps: Sequence[float],
-        sessionDetails: SessionDetails,
+        h5Filename: str,
+        preWindowSize: int = 500,
+        postWindowSize: int = 1500,
+        title: str = "",
     ) -> None:
-        self.sessionDetails = sessionDetails
+        self.preWindowSize = preWindowSize
+        self.postWindowSize = postWindowSize
+        self.title = title
 
-        trialGroups = {
-            condition: (
-                np.tile(value, (sessionDetails.numCycles, 1))
-                + (
-                    np.arange(sessionDetails.numCycles)
-                    * sessionDetails.numTrialsPerCycles
-                ).reshape(sessionDetails.numCycles, 1)
-            ).flatten()
-            - 1
-            for condition, value in sessionDetails.cycleTemplate.items()
-        }
+        sessionData = processROI.get_trials_metadata(h5Filename)
+        odorCodeGenerator = iter("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+        self.odorCodesToNames: Dict[str, str] = {}
+        self.odorNamesToCodes: Dict[str, str] = {}
+        trialGroups: Dict[str, List[int]] = {}
+        for i_trial, trial in sessionData.iterrows():
+            stimuli = []
+            odors = [trial["olfas:olfa_0:odor"], trial["olfas:olfa_1:odor"]]
+            for i_odor, odor in enumerate(odors):
+                if odor in IGNORE_ODORS:
+                    continue
+                if odor not in self.odorCodesToNames.values():
+                    nextCode = next(odorCodeGenerator)
+                    self.odorCodesToNames[nextCode] = odor
+                    self.odorNamesToCodes[odor] = nextCode
+                stimuli.append(
+                    (
+                        trial["olfas:olfa_" + str(i_odor) + ":mfc_1_flow"],
+                        self.odorNamesToCodes[odor],
+                    )
+                )
+            condition = self.standardize_condition_text(stimuli)
+            if condition:
+                trialGroups[condition] = trialGroups.get(condition, []) + [i_trial]
         self.trialGroups = pd.DataFrame(data=trialGroups)
         self._set_timestamps(trialAlignmentTimes)
         self._set_frameWindows(frameTimestamps)
+
+    @staticmethod
+    def standardize_condition_text(stimuli: Sequence[Tuple[float, str]]) -> str:
+        """Produce consistent condition text from odor name and flow rates.
+
+        Examples:
+        standardize_condition_text([(1.8, 'A'), (0.2,'B')]) -> "90% A, 10% B"
+        standardize_condition_text([(0.9, 'A')]) -> "100% A"
+        standardize_condition_text([]) -> ""
+
+        Arguments:
+            stimuli {Sequence[Tuple[float, str]]} -- Sequence of each presented stimuli as
+                a tuple of odor flow rate and name.
+
+        Returns:
+            str -- [description]
+        """
+        flowSum = sum([stimulus[0] for stimulus in stimuli])
+        conditions = [
+            "{}% ".format(round(100 * stimulus[0] / flowSum)) + stimulus[1]
+            for stimulus in stimuli
+        ]
+        return ",".join(conditions)
 
     def _set_timestamps(self, timelocks: pd.DataFrame) -> None:
         trialPreTimelocks = pd.DataFrame()
@@ -66,12 +113,10 @@ class ImagingSession:
         trialTimelocks = pd.DataFrame()
         for condition in self.trialGroups:
             trialPreTimelocks[condition] = (
-                timelocks.iloc[self.trialGroups[condition]].values
-                - self.sessionDetails.preWindow
+                timelocks.iloc[self.trialGroups[condition]].values - self.preWindowSize
             )
             trialPostTimelocks[condition] = (
-                timelocks.iloc[self.trialGroups[condition]].values
-                + self.sessionDetails.postWindow
+                timelocks.iloc[self.trialGroups[condition]].values + self.postWindowSize
             )
             trialTimelocks[condition] = timelocks.iloc[
                 self.trialGroups[condition]
@@ -126,7 +171,7 @@ class ImagingSession:
     def get_trial_average_data(
         self, ROIaverages: np.ndarray, meanF: np.ndarray, condition: str
     ) -> np.ndarray:
-        numROI = ROIaverages.shape[1]
+        shapeROI = ROIaverages.shape[1:]
         numTrials = len(self.lockFrames[condition])
         self.maxSliceWidth = max(
             post - pre
@@ -140,7 +185,7 @@ class ImagingSession:
             lock - pre
             for pre, lock in zip(self.preFrames[condition], self.lockFrames[condition])
         )
-        trialAverageData = np.zeros((self.maxSliceWidth, numTrials, numROI))
+        trialAverageData = np.zeros((self.maxSliceWidth, numTrials) + shapeROI)
         for i_slice, slce in enumerate(preWindows):
             tempData = ROIaverages[slce, :]
             trialAverageData[
@@ -159,7 +204,7 @@ class ImagingSession:
                 self.zeroFrame : self.zeroFrame + tempData.shape[0], i_slice, :
             ] = tempData
 
-        dF_F = trialAverageData / meanF.reshape(1, numTrials, numROI) - 1
+        dF_F = trialAverageData / meanF.reshape((1, numTrials) + shapeROI) - 1
         dF_F[dF_F == -1] = np.nan
         return dF_F
 
