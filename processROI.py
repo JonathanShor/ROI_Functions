@@ -5,6 +5,7 @@ from typing import List, Sequence, Union
 import h5py
 import numpy as np
 import pandas as pd
+from tqdm import trange
 
 
 def get_bounds_index(mask, maxBound):
@@ -203,3 +204,31 @@ def downsample(arr: np.ndarray, newShape: Sequence[int]) -> np.ndarray:
     for i_dim, size in enumerate(newShape):
         shape += [size, arr.shape[i_dim] // newShape[i_dim]]
     return arr.reshape(shape).mean(tuple(range(1, len(newShape) * 2, 2)))
+
+
+def pixelwise_correlate(
+    pixelsTimeseries: np.ndarray, roiTimeseries: Sequence[float]
+) -> np.ndarray:
+    """[summary]
+
+    Arguments:
+        pixelsTimeseries {np.ndarray} -- Frames must be first dimension.
+        roiTimeseries {Sequence[float]} -- Length should equal frames of pixelsTimeseries.
+
+    Returns:
+        np.ndarray -- [description]
+    """
+    # Only consider frames with ROI response
+    nonNullFrames = ~np.isnan(roiTimeseries, dtype=np.bool)
+    pixelsView = pixelsTimeseries[nonNullFrames]
+    roiView = roiTimeseries[nonNullFrames]
+    correlateScores = np.zeros_like(pixelsView[0])
+    numRows = correlateScores.shape[0]
+    for x in trange(numRows):
+        # Replace NAN in the pixel data with -1 (no signal) for calculating correlation
+        pixelsViewNoNan = pixelsView.copy()
+        pixelsViewNoNan[np.isnan(pixelsView, dtype=np.bool)] = -1
+        correlateScores[x] = np.corrcoef(
+            np.moveaxis(pixelsViewNoNan, 0, -1)[x, :, :], roiView
+        )[-1, :-1]
+    return correlateScores

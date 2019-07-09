@@ -23,10 +23,10 @@ class TiffStack:
             ndarray -- Timeseries (frames by x-coord by y-coord).
         """
         tiffFNames = sorted(glob.glob(tiffsPattern))
-        stack = io.imread(tiffFNames[0])
+        stacks = [io.imread(tiffFNames[0])]
         for fname in tiffFNames[1:]:
-            next = io.imread(fname)
-            stack = np.concatenate((stack, next), axis=0)
+            stacks.append(io.imread(fname))
+        stack = np.concatenate(stacks, axis=0)
         return stack
 
     def add_masks(self, maskPattern: str = "*.bmp"):

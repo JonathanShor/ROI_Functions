@@ -12,6 +12,7 @@ h5py = "*"
 numpy = "*"
 scikit-image = "*"
 pandas = "*"
+tqdm = "*"
 
 [requires]
 python_version = "3.7"
