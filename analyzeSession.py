@@ -299,7 +299,7 @@ def visualize_correlation(
     sns.set(rc={"figure.figsize": figDims})
     numROI = len(correlationsByROI)
     figs = []
-    for i_fig in range(int(np.ceil(numROI / maxSubPlots))):
+    for i_fig in trange(int(np.ceil(numROI / maxSubPlots))):
         ROIOffset = maxSubPlots * i_fig
         selectedROIs = list(range(0 + ROIOffset, min(maxSubPlots + ROIOffset, numROI)))
         fig = plot_correlations_by_ROI(
@@ -307,9 +307,11 @@ def visualize_correlation(
         )
         figs.append(fig)
     if savePath:
-        with PdfPages(savePath + ".pdf") as pp:
-            for fig in figs:
-                pp.savefig(fig)
+        # with PdfPages(savePath + ".pdf") as pp:
+        #     for fig in figs:
+        #         pp.savefig(fig)
+        for i_fig, fig in enumerate(figs):
+            fig.savefig(savePath + " " + str(i_fig) + ".png")
     return figs
 
 
@@ -323,7 +325,7 @@ def plot_correlations_by_ROI(
     numPlots = numROI
     layout = pick_layout(numPlots)
     fig, axarr = plt.subplots(layout[0], layout[1], squeeze=False)
-    cmap = sns.diverging_palette(0, 255, sep=round(0.2 * 256), as_cmap=True)
+    cmap = sns.diverging_palette(255, 0, sep=round(0.2 * 256), as_cmap=True)
     for i_ROI, roi in enumerate(selectedROIs):
         plotLocation = np.unravel_index(i_ROI, layout)
         axarr[plotLocation].title.set_text("ROI #" + str(roi))
@@ -331,6 +333,7 @@ def plot_correlations_by_ROI(
         sns.heatmap(plotData, ax=axarr[plotLocation], cmap=cmap)
     fig.suptitle(suptitle)
     subtitle("Odor key: " + f"{odorNames}".replace("'", ""))
+    return fig
 
 
 def visualize_conditions(
