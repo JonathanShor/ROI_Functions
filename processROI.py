@@ -203,3 +203,61 @@ def downsample(arr: np.ndarray, newShape: Sequence[int]) -> np.ndarray:
     for i_dim, size in enumerate(newShape):
         shape += [size, arr.shape[i_dim] // newShape[i_dim]]
     return arr.reshape(shape).mean(tuple(range(1, len(newShape) * 2, 2)))
+
+
+def better_correlation(
+    reference: Sequence[float], columnVecs: np.ndarray
+) -> np.ndarray:
+    """Fast Pearson correlation coefficient between many vectors and one reference vector.
+
+    Note that for two standard scaled vectors x,y (mean == 0, std == 1), the Pearson
+    correlation coefficient formula collapses from
+        1/N * sum(((x - mean(x)) * (y - mean(y))) / (std(x) * std(y))
+    to
+        1/N * sum(x * y).
+    For a matrix X consisting of m column vectors and column vector y, this is
+        1/N * dot(X.transpose, y)
+    producing an m-length vector correlation coefficients.
+
+    Arguments:
+        reference {Sequence[float]} -- Reference vector.
+        columnVecs {np.ndarray} -- Matrix of column vectors.
+
+    Returns:
+        np.ndarray -- Vector containing Pearson correlation coefficient for each column in
+            columnVecs.
+    """
+    refCentered = (reference - np.nanmean(reference)) / np.nanstd(reference)
+    vectorLength = len(reference)
+    assert vectorLength == columnVecs.shape[0], "Column vectors must have same length."
+    if columnVecs.ndim > 2:
+        columnVecs = columnVecs.reshape(vectorLength, -1)
+    columnsCentered = (columnVecs - np.nanmean(columnVecs, axis=0)) / np.nanstd(
+        columnVecs, axis=0
+    )
+    return (1 / vectorLength) * np.dot((columnsCentered).T, refCentered)
+
+
+def pixelwise_correlate(
+    pixelsTimeseries: np.ndarray, roiTimeseries: Sequence[float]
+) -> np.ndarray:
+    """[summary]
+
+    Arguments:
+        pixelsTimeseries {np.ndarray} -- Frames must be first dimension.
+        roiTimeseries {Sequence[float]} -- Length should equal frames of pixelsTimeseries.
+
+    Returns:
+        np.ndarray -- [description]
+    """
+    # Only consider frames with ROI response
+    nonNullFrames = ~np.isnan(roiTimeseries, dtype=np.bool)
+    pixelsView = pixelsTimeseries[nonNullFrames]
+    roiView = roiTimeseries[nonNullFrames]
+    # Replace NAN/inf in the pixel data with -1 (no signal)
+    pixelsViewNoNan = pixelsView.copy()
+    pixelsViewNoNan[~np.isfinite(pixelsView, dtype=np.bool)] = -1
+    correlateScores = better_correlation(roiView, pixelsViewNoNan).reshape(
+        pixelsView.shape[1:]
+    )
+    return correlateScores

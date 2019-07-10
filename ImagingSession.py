@@ -205,6 +205,7 @@ class ImagingSession:
             ] = tempData
 
         dF_F = trialAverageData / meanF.reshape((1, numTrials) + shapeROI) - 1
+        dF_F[np.isinf(dF_F)] = np.nan
         dF_F[dF_F == -1] = np.nan
         return dF_F
 

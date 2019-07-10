@@ -1,10 +1,13 @@
 """Analyze a 2P imaging session from tiff stack, h5 metadata, and ROI masks.
 """
+import os
 from typing import Callable, Dict, List, Mapping, Sequence, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
+from matplotlib.backends.backend_pdf import PdfPages
+from tqdm import tqdm, trange
 
 import processROI
 from ImagingSession import ImagingSession
@@ -285,6 +288,75 @@ def plot_dF_F_timeseries(
     ax.plot([frameData[0], frameData[-1]], [0, 0], "--k", zorder=-1)
 
 
+def visualize_correlation(
+    correlationsByROI: Sequence[np.ndarray],
+    masks: Sequence[np.ndarray],
+    odorNames: Mapping[str, str],
+    savePath: str = None,
+    title: str = "",
+    figDims: Tuple[int, int] = (10, 9),
+    maxSubPlots: int = 16,
+) -> List[plt.Figure]:
+    sns.set(rc={"figure.figsize": figDims})
+    numROI = len(correlationsByROI)
+    figs = []
+    for i_fig in trange(int(np.ceil(numROI / maxSubPlots))):
+        ROIOffset = maxSubPlots * i_fig
+        selectedROIs = list(range(0 + ROIOffset, min(maxSubPlots + ROIOffset, numROI)))
+        fig = plot_correlations_by_ROI(
+            correlationsByROI, masks, odorNames, title, selectedROIs
+        )
+        figs.append(fig)
+    if savePath:
+        # with PdfPages(savePath + ".pdf") as pp:
+        #     for fig in figs:
+        #         pp.savefig(fig)
+        for i_fig, fig in enumerate(figs):
+            fig.savefig(savePath + " " + str(i_fig) + ".png")
+            plt.close(fig)
+    return figs
+
+
+def plot_correlations_by_ROI(
+    correlationsByROI: Sequence[np.ndarray],
+    masks: Sequence[np.ndarray],
+    odorNames: Mapping[str, str],
+    suptitle: str,
+    selectedROIs: Sequence[int],
+    clipCorrelation: float = 0.5,  # value to clip heatmap colorbar
+    colormap=sns.diverging_palette(255, 0, sep=round(0.2 * 256), as_cmap=True),
+) -> plt.Figure:
+    numROI = len(correlationsByROI)
+    assert len(masks) == numROI
+    numPlots = numROI
+    layout = pick_layout(numPlots)
+    fig, axarr = plt.subplots(
+        layout[0], layout[1], sharex=True, sharey=True, squeeze=False
+    )
+    colorbar = fig.add_axes([0.91, 0.15, 0.03, 0.7])
+    for i_ROI, roi in enumerate(selectedROIs):
+        plotLocation = np.unravel_index(i_ROI, layout)
+        axarr[plotLocation].title.set_text("ROI #" + str(roi))
+        plotData = correlationsByROI[roi]
+        sns.heatmap(
+            plotData,
+            ax=axarr[plotLocation],
+            cmap=colormap,
+            vmin=-clipCorrelation,
+            vmax=clipCorrelation,
+            center=0,
+            xticklabels=100,
+            yticklabels=200,
+            cbar=i_ROI == 0,
+            cbar_ax=None if i_ROI else colorbar,
+        )
+        # Draw outline of ROI for reference
+        axarr[plotLocation].contour(masks[roi], colors="black", linewidths=0.3)
+    fig.suptitle(suptitle)
+    subtitle("Odor key: " + f"{odorNames}".replace("'", ""))
+    return fig
+
+
 def visualize_conditions(
     dF_Fs: Dict[str, np.ndarray],
     session: ImagingSession,
@@ -358,3 +430,57 @@ def subtitle(text: str) -> None:
     plt.figtext(
         0.5, 0.93, text, style="italic", fontsize="small", horizontalalignment="center"
     )
+
+
+def process_and_viz_correlations(
+    roiStackPattern: str,
+    tiffStackPatterns: Sequence[str],
+    maskDir: str,
+    session: ImagingSession,
+    savePath: str,
+):
+    """Process correlation tracing imaging session.
+
+    Arguments:
+        roiStackPattern {str} -- Path to tiffStack containing ROI to correlate against.
+            Shell wildcard characters acceptable. This is fed directly to TiffStack
+            constructor.
+        tiffStackPatterns {Sequence[str]} -- Paths to each tiffStack to correlate against
+            each ROI. Shell wildcard characters acceptable. This is fed directly to
+            TiffStack constructor.
+        maskDir {str} -- Path to directory containing .bmp ROI masks.
+        session {ImagingSession} -- Framing details for the session.
+    """
+    roiStack = TiffStack(roiStackPattern)
+    roiStack.add_masks(maskDir)
+    roiAverages = roiStack.cut_to_averages()
+    roiMeanFs = session.get_meanFs(roiAverages)
+    roiDF_Fs = {}
+    for condition in roiMeanFs:
+        roiDF_Fs[condition] = session.get_trial_average_data(
+            roiAverages, roiMeanFs[condition], condition
+        )
+    for tiffPattern in tiffStackPatterns:
+        stack = TiffStack(tiffPattern)
+        pixelMeanFs = session.get_meanFs(stack.timeseries)
+        assert list(roiMeanFs) == list(pixelMeanFs)
+        for condition in tqdm(pixelMeanFs):
+            pixeldF_Fs = session.get_trial_average_data(
+                stack.timeseries, pixelMeanFs[condition], condition
+            )
+            correlationsByROI = []
+            numROI = roiDF_Fs[condition].shape[2]
+            for i_roi in trange(numROI):
+                # Average across trials
+                roiTimeseries = np.nanmean(roiDF_Fs[condition][:, :, i_roi], axis=1)
+                pixelsTimeseries = np.nanmean(pixeldF_Fs, axis=1)
+                correlationsByROI.append(
+                    processROI.pixelwise_correlate(pixelsTimeseries, roiTimeseries)
+                )
+            visualize_correlation(
+                correlationsByROI,
+                roiStack.masks,
+                session.odorCodesToNames,
+                title=condition,
+                savePath=os.path.join(savePath, condition),
+            )
