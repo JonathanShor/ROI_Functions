@@ -290,6 +290,7 @@ def plot_dF_F_timeseries(
 
 def visualize_correlation(
     correlationsByROI: Sequence[np.ndarray],
+    masks: Sequence[np.ndarray],
     odorNames: Mapping[str, str],
     savePath: str = None,
     title: str = "",
@@ -303,7 +304,7 @@ def visualize_correlation(
         ROIOffset = maxSubPlots * i_fig
         selectedROIs = list(range(0 + ROIOffset, min(maxSubPlots + ROIOffset, numROI)))
         fig = plot_correlations_by_ROI(
-            correlationsByROI, odorNames, title, selectedROIs
+            correlationsByROI, masks, odorNames, title, selectedROIs
         )
         figs.append(fig)
     if savePath:
@@ -312,25 +313,45 @@ def visualize_correlation(
         #         pp.savefig(fig)
         for i_fig, fig in enumerate(figs):
             fig.savefig(savePath + " " + str(i_fig) + ".png")
+            plt.close(fig)
     return figs
 
 
 def plot_correlations_by_ROI(
     correlationsByROI: Sequence[np.ndarray],
+    masks: Sequence[np.ndarray],
     odorNames: Mapping[str, str],
     suptitle: str,
     selectedROIs: Sequence[int],
+    clipCorrelation: float = 0.5,  # value to clip heatmap colorbar
+    colormap=sns.diverging_palette(255, 0, sep=round(0.2 * 256), as_cmap=True),
 ) -> plt.Figure:
     numROI = len(correlationsByROI)
+    assert len(masks) == numROI
     numPlots = numROI
     layout = pick_layout(numPlots)
-    fig, axarr = plt.subplots(layout[0], layout[1], squeeze=False)
-    cmap = sns.diverging_palette(255, 0, sep=round(0.2 * 256), as_cmap=True)
+    fig, axarr = plt.subplots(
+        layout[0], layout[1], sharex=True, sharey=True, squeeze=False
+    )
+    colorbar = fig.add_axes([0.91, 0.15, 0.03, 0.7])
     for i_ROI, roi in enumerate(selectedROIs):
         plotLocation = np.unravel_index(i_ROI, layout)
         axarr[plotLocation].title.set_text("ROI #" + str(roi))
-        plotData = correlationsByROI[i_ROI]
-        sns.heatmap(plotData, ax=axarr[plotLocation], cmap=cmap)
+        plotData = correlationsByROI[roi]
+        sns.heatmap(
+            plotData,
+            ax=axarr[plotLocation],
+            cmap=colormap,
+            vmin=-clipCorrelation,
+            vmax=clipCorrelation,
+            center=0,
+            xticklabels=100,
+            yticklabels=200,
+            cbar=i_ROI == 0,
+            cbar_ax=None if i_ROI else colorbar,
+        )
+        # Draw outline of ROI for reference
+        axarr[plotLocation].contour(masks[roi], colors="black", linewidths=0.3)
     fig.suptitle(suptitle)
     subtitle("Odor key: " + f"{odorNames}".replace("'", ""))
     return fig
@@ -458,6 +479,7 @@ def process_and_viz_correlations(
                 )
             visualize_correlation(
                 correlationsByROI,
+                roiStack.masks,
                 session.odorCodesToNames,
                 title=condition,
                 savePath=os.path.join(savePath, condition),
