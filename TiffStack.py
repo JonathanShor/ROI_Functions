@@ -1,10 +1,18 @@
 """Manage an imaging session tiff stack and ROI masks.
 """
 import glob
+import logging
+import sys
+import time
 from typing import List, Sequence
 
 import numpy as np
 from skimage import io
+from tqdm import tqdm
+
+logger = logging.getLogger("TiffStack")
+logger.addHandler(logging.StreamHandler(stream=sys.stdout))
+logger.setLevel(logging.INFO)
 
 
 class TiffStack:
@@ -22,11 +30,15 @@ class TiffStack:
         Returns:
             ndarray -- Timeseries (frames by x-coord by y-coord).
         """
+        startTime = time.time()
+        logger.info(f"Opening files matching tiffsPattern = {tiffsPattern}")
         tiffFNames = sorted(glob.glob(tiffsPattern))
-        stacks = [io.imread(tiffFNames[0])]
-        for fname in tiffFNames[1:]:
+        stacks = []
+        for fname in tqdm(tiffFNames, unit="file"):
             stacks.append(io.imread(fname))
+        logger.info("Concatenating.")
         stack = np.concatenate(stacks, axis=0)
+        logger.debug(f"TiffStack creation time: {time.time() - startTime}")
         return stack
 
     def add_masks(self, maskPattern: str = "*.bmp"):
