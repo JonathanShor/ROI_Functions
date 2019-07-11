@@ -13,6 +13,7 @@ numpy = "*"
 scikit-image = "*"
 pandas = "*"
 tqdm = "*"
+seaborn = "*"
 
 [requires]
 python_version = "3.7"
