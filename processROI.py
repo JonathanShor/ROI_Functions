@@ -147,7 +147,12 @@ def clean_frame_trigger_data(data, frameRate=100 / 3):
             np.round((np.arange(numFillIns) + 1) * frameRate) + cleanData[gapIndex]
         )
         filledData = np.insert(filledData, gapIndex + 1, fillIns)
-    assert np.all(np.abs((filledData[1:] - filledData[:-1]) - frameRate) <= 1)
+    assert np.all(
+        np.abs((filledData[1:] - filledData[:-1]) - frameRate) < 2
+    ), "Gaps 2ms or longer still exist"
+    assert (
+        np.sum(np.abs((filledData[1:] - filledData[:-1]) - frameRate) > 1) <= 3
+    ), "More than three gaps greater than 1ms still exist"
     return filledData
 
 

@@ -299,6 +299,7 @@ def visualize_correlation(
 ) -> List[plt.Figure]:
     sns.set(rc={"figure.figsize": figDims})
     numROI = len(correlationsByROI)
+    assert len(masks) == numROI
     figs = []
     for i_fig in trange(int(np.ceil(numROI / maxSubPlots))):
         ROIOffset = maxSubPlots * i_fig
@@ -326,9 +327,7 @@ def plot_correlations_by_ROI(
     clipCorrelation: float = 0.5,  # value to clip heatmap colorbar
     colormap=sns.diverging_palette(255, 0, sep=round(0.2 * 256), as_cmap=True),
 ) -> plt.Figure:
-    numROI = len(correlationsByROI)
-    assert len(masks) == numROI
-    numPlots = numROI
+    numPlots = len(selectedROIs)
     layout = pick_layout(numPlots)
     fig, axarr = plt.subplots(
         layout[0], layout[1], sharex=True, sharey=True, squeeze=False
@@ -350,6 +349,8 @@ def plot_correlations_by_ROI(
             cbar=i_ROI == 0,
             cbar_ax=None if i_ROI else colorbar,
         )
+        # Keep y-ticklabels horizontal
+        plt.yticks(rotation=0)
         # Draw outline of ROI for reference
         axarr[plotLocation].contour(masks[roi], colors="black", linewidths=0.3)
     fig.suptitle(suptitle)
