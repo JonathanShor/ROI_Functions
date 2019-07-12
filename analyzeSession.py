@@ -350,7 +350,9 @@ def plot_correlations_by_ROI(
             cbar_ax=None if i_ROI else colorbar,
         )
         # Keep y-ticklabels horizontal
-        plt.yticks(rotation=0)
+        axarr[plotLocation].set_yticklabels(
+            axarr[plotLocation].get_yticklabels(), rotation=0
+        )
         # Draw outline of ROI for reference
         axarr[plotLocation].contour(masks[roi], colors="black", linewidths=0.3)
     fig.suptitle(suptitle)
@@ -461,27 +463,28 @@ def process_and_viz_correlations(
         roiDF_Fs[condition] = session.get_trial_average_data(
             roiAverages, roiMeanFs[condition], condition
         )
-    for tiffPattern in tiffStackPatterns:
+    for i_stack, tiffPattern in enumerate(tqdm(tiffStackPatterns, unit="stack")):
         stack = TiffStack(tiffPattern)
         pixelMeanFs = session.get_meanFs(stack.timeseries)
         assert list(roiMeanFs) == list(pixelMeanFs)
-        for condition in tqdm(pixelMeanFs):
+        for condition in tqdm(pixelMeanFs, unit="condition"):
             pixeldF_Fs = session.get_trial_average_data(
                 stack.timeseries, pixelMeanFs[condition], condition
             )
             correlationsByROI = []
             numROI = roiDF_Fs[condition].shape[2]
-            for i_roi in trange(numROI):
+            for i_roi in trange(numROI, unit="ROI"):
                 # Average across trials
                 roiTimeseries = np.nanmean(roiDF_Fs[condition][:, :, i_roi], axis=1)
                 pixelsTimeseries = np.nanmean(pixeldF_Fs, axis=1)
                 correlationsByROI.append(
                     processROI.pixelwise_correlate(pixelsTimeseries, roiTimeseries)
                 )
+            title = "stack" + str(i_stack) + "_" + condition
             visualize_correlation(
                 correlationsByROI,
                 roiStack.masks,
                 session.odorCodesToNames,
-                title=condition,
-                savePath=os.path.join(savePath, condition),
+                title=title,
+                savePath=os.path.join(savePath, title),
             )
