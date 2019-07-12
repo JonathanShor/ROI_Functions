@@ -1,37 +1,46 @@
 """Process ROIs
 """
-from typing import List, Sequence, Union
+from typing import List, Sequence, Tuple, Union
 
 import h5py
 import numpy as np
 import pandas as pd
 
+BoxCoords = Tuple[List[int], List[int]]
 
-def get_bounds_index(mask, maxBound):
+
+def get_bounds_index(mask: np.ndarray) -> BoxCoords:
+    """Returns coordinates of opposing (min/max each dim) corners of bounding (hyper)box.
+
+    Arguments:
+        mask {np.ndarray} -- Boolean mask.
+
+    Returns:
+        Tuple[List[int], List[int]] -- (Coords of min corner, coords of max corner)
+    """
+    maxBound = mask.shape
     maskIndexes = mask.nonzero()
     maxIndex = [max(i) for i in maskIndexes]
     assert all([maski <= boundi for maski, boundi in zip(maxIndex, maxBound)])
     minIndex = [min(i) for i in maskIndexes]
     assert all([maski >= 0 for maski in minIndex])
-    return maxIndex, minIndex
+    return minIndex, maxIndex
 
 
-def cut_to_bounding_boxes(timeseries, masks):
-    """Cut up timeseries into ROI bounding boxes.
+def get_bounding_boxes(masks: Sequence[np.ndarray]) -> List[BoxCoords]:
+    """Get ROI bounding boxes.
 
     Arguments:
-        timeseries {ndarray} -- Source timeseries. First dimension is time.
-        masks {[ndarray]} -- Sequence of binary masks.
+        masks {Sequence[ndarray]} -- Sequence of binary masks.
+        FOVShape {Sequence[int]} -- Maximum index for each dimension of FOV masks reside
+            in.
 
     Returns:
-        [ndarray] -- List of timeseries, each entry corresponding to an ROI as defined by
-            masks.
+        List[Tuple[List[int], List[int]]] -- List of bounding coordinates, each entry
+            corresponding to an ROI as defined by masks. Each entry consists of a 2-tuple,
+            the minimum coordinate corner and the maximum coordinate corner.
     """
-    ROIs = []
-    for mask in masks:
-        maxIndex, minIndex = get_bounds_index(mask, timeseries[0].shape)
-        masked = timeseries[:, mask]
-        ROIs += [masked[:, minIndex[0] : maxIndex[0], minIndex[1] : maxIndex[1]]]
+    ROIs = [get_bounds_index(mask) for mask in masks]
     return ROIs
 
 
