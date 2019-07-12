@@ -1,6 +1,8 @@
 """Analyze a 2P imaging session from tiff stack, h5 metadata, and ROI masks.
 """
+import logging
 import os
+import sys
 from typing import Callable, Dict, List, Mapping, Sequence, Tuple, Union
 
 import matplotlib.pyplot as plt
@@ -12,6 +14,10 @@ from tqdm import tqdm, trange
 import processROI
 from ImagingSession import ImagingSession
 from TiffStack import TiffStack
+
+logger = logging.getLogger("analyzeSession")
+logger.addHandler(logging.StreamHandler(stream=sys.stdout))
+logger.setLevel(logging.DEBUG)
 
 
 def process(
@@ -437,7 +443,7 @@ def subtitle(text: str) -> None:
 
 def process_and_viz_correlations(
     roiStackPattern: str,
-    tiffStackPatterns: Sequence[str],
+    corStackPatterns: Sequence[str],
     maskDir: str,
     session: ImagingSession,
     savePath: str,
@@ -448,7 +454,7 @@ def process_and_viz_correlations(
         roiStackPattern {str} -- Path to tiffStack containing ROI to correlate against.
             Shell wildcard characters acceptable. This is fed directly to TiffStack
             constructor.
-        tiffStackPatterns {Sequence[str]} -- Paths to each tiffStack to correlate against
+        corStackPatterns {Sequence[str]} -- Paths to each tiffStack to correlate against
             each ROI. Shell wildcard characters acceptable. This is fed directly to
             TiffStack constructor.
         maskDir {str} -- Path to directory containing .bmp ROI masks.
@@ -463,7 +469,8 @@ def process_and_viz_correlations(
         roiDF_Fs[condition] = session.get_trial_average_data(
             roiAverages, roiMeanFs[condition], condition
         )
-    for i_stack, tiffPattern in enumerate(tqdm(tiffStackPatterns, unit="stack")):
+    logger.debug(f"Tiff stack patterns to correlate against: {corStackPatterns}")
+    for i_stack, tiffPattern in enumerate(tqdm(corStackPatterns, unit="stack")):
         stack = TiffStack(tiffPattern)
         pixelMeanFs = session.get_meanFs(stack.timeseries)
         assert list(roiMeanFs) == list(pixelMeanFs)
