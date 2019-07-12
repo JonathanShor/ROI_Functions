@@ -26,48 +26,37 @@ class TrialFilePath:
     saveDir: str
 
 
+ROOTPATH = "/gpfs/scratch/jds814/2P-data/HN1953/"
 trialFilePaths = {
     "190701_field2": TrialFilePath(
-        os.path.join(
-            "/gpfs/scratch/jds814/2P-data/HN1953/190701/aligned",
-            "HN1953_190701_field2_00001_000*.tif",
-        ),
-        os.path.join(
-            "/gpfs/scratch/jds814/2P-data/HN1953/190701/aligned", "field2_masks/*.bmp"
-        ),
-        os.path.join(
-            "/gpfs/scratch/jds814/2P-data/HN1953/190701",
-            "1953_1_01_D2019_7_1T11_52_7_odor.h5",
-        ),
+        os.path.join(ROOTPATH, "190701/aligned", "HN1953_190701_field2_00001_000*.tif"),
+        os.path.join(ROOTPATH, "190701/aligned", "field2_masks/*.bmp"),
+        os.path.join(ROOTPATH, "190701", "1953_1_01_D2019_7_1T11_52_7_odor.h5"),
         [
             os.path.join(
-                "/gpfs/scratch/jds814/2P-data/HN1953/190701/aligned",
+                ROOTPATH,
+                "190701/aligned",
                 "HN1953_190701_field" + str(i_field) + "_00001_000*.tif",
             )
             for i_field in range(2, 12)
         ],
-        "/gpfs/scratch/jds814/2P-data/HN1953/190701/figures/field2",
+        os.path.join(ROOTPATH, "190701/figures/field2"),
     ),
     "190701_field11": TrialFilePath(
         os.path.join(
-            "/gpfs/scratch/jds814/2P-data/HN1953/190701/aligned",
-            "HN1953_190701_field11_00001_000*.tif",
+            ROOTPATH, "190701/aligned", "HN1953_190701_field11_00001_000*.tif"
         ),
-        os.path.join(
-            "/gpfs/scratch/jds814/2P-data/HN1953/190701/aligned", "field11_masks/*.bmp"
-        ),
-        os.path.join(
-            "/gpfs/scratch/jds814/2P-data/HN1953/190701",
-            "1953_1_10_D2019_7_1T13_48_29_odor.h5",
-        ),
+        os.path.join(ROOTPATH, "190701/aligned", "field11_masks/*.bmp"),
+        os.path.join(ROOTPATH, "190701", "1953_1_10_D2019_7_1T13_48_29_odor.h5"),
         [
             os.path.join(
-                "/gpfs/scratch/jds814/2P-data/HN1953/190701/aligned",
+                ROOTPATH,
+                "190701/aligned",
                 "HN1953_190701_field" + str(i_field) + "_00001_000*.tif",
             )
             for i_field in range(11, 1, -1)
         ],
-        "/gpfs/scratch/jds814/2P-data/HN1953/190701/figures/field11",
+        os.path.join(ROOTPATH, "190701/figures/field11"),
     ),
 }
 
