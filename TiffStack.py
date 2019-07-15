@@ -41,7 +41,7 @@ class TiffStack:
         logger.debug(f"TiffStack creation time: {time.time() - startTime}")
         return stack
 
-    def add_masks(self, maskPattern: str = "*.bmp"):
+    def add_masks(self, maskPattern: str = "*.bmp") -> None:
         self.masks += self._get_masks(maskPattern)
 
     def _get_masks(self, maskPattern: str) -> Sequence[np.ndarray]:
@@ -61,13 +61,21 @@ class TiffStack:
             masks += [mask] if np.sum(mask) < np.sum(invMask) else [invMask]
         return masks
 
-    def cut_to_averages(self) -> np.ndarray:
+    def cut_to_averages(self, forceNew=False) -> np.ndarray:
         """Get average intensity of each ROI at each frame.
+
+        Keyword Arguments:
+            forceNew {bool} -- Force calculating averages even if .averages already
+                exists. (default: {False})
 
         Returns:
             ndarray -- Frames by ROI.
         """
-        ROIaverages = np.empty((self.timeseries.shape[0], len(self.masks)))
-        for i_mask, mask in enumerate(self.masks):
-            ROIaverages[:, i_mask] = np.mean(self.timeseries[:, mask], axis=1)
+        if forceNew or (not hasattr(self, "averages")):
+            ROIaverages = np.empty((self.timeseries.shape[0], len(self.masks)))
+            for i_mask, mask in enumerate(self.masks):
+                ROIaverages[:, i_mask] = np.mean(self.timeseries[:, mask], axis=1)
+            self.averages = ROIaverages
+        else:
+            ROIaverages = self.averages
         return ROIaverages
