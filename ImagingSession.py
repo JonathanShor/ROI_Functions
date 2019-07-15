@@ -217,3 +217,25 @@ class ImagingSession:
         """
         lockOffset = list(range(-self.zeroFrame, self.maxSliceWidth - self.zeroFrame))
         return lockOffset
+
+
+class H5Session(ImagingSession):
+    def __init__(
+        self,
+        h5Filename: str,
+        preWindowSize: int = 500,
+        postWindowSize: int = 1500,
+        title: str = "",
+    ):
+        frameTimestamps = processROI.get_flatten_trial_data(
+            h5Filename, "frame_triggers", clean=True
+        )
+        trialAlignmentTimes = processROI.get_trials_metadata(h5Filename)["inh_onset"]
+        return super().__init__(
+            trialAlignmentTimes,
+            frameTimestamps,
+            h5Filename,
+            preWindowSize=preWindowSize,
+            postWindowSize=postWindowSize,
+            title=title,
+        )
