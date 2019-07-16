@@ -100,7 +100,7 @@ trialFilePaths = {
 }
 
 
-def test_process_and_viz_correlations(trialFilePath):
+def test_process_and_viz_correlations(trialFilePath, window=None):
     roiStackPattern = trialFilePath.refPattern
     maskDir = trialFilePath.maskDir
     roiStack = TiffStack(roiStackPattern)
@@ -126,9 +126,22 @@ def test_process_and_viz_correlations(trialFilePath):
             trialFilePath.corrPatterns[i_session],
             corrSession,
             savePath,
+            window=window,
         )
 
 
 if __name__ == "__main__":
-    for paths in tqdm(trialFilePaths.values(), unit="field"):
+    if sys.argv[1] == "0":
+        field = "190701_field2"
+    else:
+        field = "190701_field11"
+    extraTitle = sys.argv[2]
+    paths = trialFilePaths[field]
+    paths.saveDir = os.path.join(paths.saveDir, extraTitle)
+    if len(sys.argv) > 3:
+        window = slice(int(sys.argv[3]), int(sys.argv[4]))
+        logger.info("Running field {}, window {}\n{}".format(field, window, paths))
+        test_process_and_viz_correlations(paths, window=window)
+    else:
+        logger.info("Running field {}, window {}\n{}".format(field, None, paths))
         test_process_and_viz_correlations(paths)

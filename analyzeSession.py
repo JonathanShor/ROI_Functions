@@ -374,7 +374,9 @@ def plot_correlations_by_ROI(
             axarr[plotLocation].get_yticklabels(), rotation=0
         )
         # Draw outline of ROI for reference
-        axarr[plotLocation].contour(masks[roi], colors="black", linewidths=0.3)
+        axarr[plotLocation].contour(
+            masks[roi], colors="black", alpha=0.7, linestyle="dashed", linewidths=0.3
+        )
     fig.suptitle(suptitle)
     subtitle("Odor key: " + f"{odorNames}".replace("'", ""))
     return fig
@@ -461,6 +463,7 @@ def process_and_viz_correlations(
     corStackPattern: str,
     session: ImagingSession,
     savePath: str,
+    window: slice = None,
 ):
     """Process correlation tracing imaging session.
 
@@ -473,6 +476,10 @@ def process_and_viz_correlations(
             TiffStack constructor.
         session {ImagingSession} -- Framing details for the session to correlate.
         savePath {str} -- Path at which to save figures.
+
+    Keyword Arguments:
+        window {slice} -- Correlation will only apply within given window. Default uses
+            full window as defined by session. (default: {None})
     """
     logger.debug(f"Tiff stack patterns to correlate against: {corStackPattern}")
     corrStack = TiffStack(corStackPattern)
@@ -488,6 +495,11 @@ def process_and_viz_correlations(
             # Average across trials
             roiTimeseries = np.nanmean(roiDF_Fs[condition][:, :, i_roi], axis=1)
             pixelsTimeseries = np.nanmean(pixeldF_Fs, axis=1)
+            if window:
+                assert len(roiTimeseries) == 60
+                roiTimeseries = roiTimeseries[window]
+                assert pixelsTimeseries.shape[0] == 60
+                pixelsTimeseries = pixelsTimeseries[window]
             correlationsByROI.append(
                 processROI.pixelwise_correlate(pixelsTimeseries, roiTimeseries)
             )
