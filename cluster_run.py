@@ -8,8 +8,8 @@ from tqdm import tqdm
 
 import analyzeSession
 import debugtoolbox
-import processROI
-from ImagingSession import ImagingSession
+from ImagingSession import H5Session
+from TiffStack import TiffStack
 
 logger = logging.getLogger("cluster_run")
 logger.addHandler(logging.StreamHandler(stream=sys.stdout))
@@ -22,16 +22,40 @@ class TrialFilePath:
     refPattern: str
     maskDir: str
     h5Filename: str
-    corPatterns: Sequence[str]
+    saveDir: str
+
+
+@dataclass
+class CorrTrialFilePath:
+    refPattern: str
+    maskDir: str
+    refH5Filename: str
+    corrH5Filenames: Sequence[str]
+    corrPatterns: Sequence[str]
     saveDir: str
 
 
 ROOTPATH = "/gpfs/scratch/jds814/2P-data/HN1953/"
 trialFilePaths = {
-    "190701_field2": TrialFilePath(
+    "190701_field2": CorrTrialFilePath(
         os.path.join(ROOTPATH, "190701/aligned", "HN1953_190701_field2_00001_000*.tif"),
         os.path.join(ROOTPATH, "190701/aligned", "field2_masks/*.bmp"),
         os.path.join(ROOTPATH, "190701", "1953_1_01_D2019_7_1T11_52_7_odor.h5"),
+        [
+            os.path.join(ROOTPATH, "190701", h5)
+            for h5 in [
+                "1953_1_01_D2019_7_1T11_52_7_odor.h5",
+                "1953_1_02_D2019_7_1T12_4_2_odor.h5",
+                "1953_1_03_D2019_7_1T12_17_13_odor.h5",
+                "1953_1_04_D2019_7_1T12_30_15_odor.h5",
+                "1953_1_05_D2019_7_1T12_43_18_odor.h5",
+                "1953_1_06_D2019_7_1T12_57_14_odor.h5",
+                "1953_1_07_D2019_7_1T13_9_27_odor.h5",
+                "1953_1_08_D2019_7_1T13_21_55_odor.h5",
+                "1953_1_09_D2019_7_1T13_34_54_odor.h5",
+                "1953_1_10_D2019_7_1T13_48_29_odor.h5",
+            ]
+        ],
         [
             os.path.join(
                 ROOTPATH,
@@ -42,12 +66,27 @@ trialFilePaths = {
         ],
         os.path.join(ROOTPATH, "190701/figures/field2"),
     ),
-    "190701_field11": TrialFilePath(
+    "190701_field11": CorrTrialFilePath(
         os.path.join(
             ROOTPATH, "190701/aligned", "HN1953_190701_field11_00001_000*.tif"
         ),
         os.path.join(ROOTPATH, "190701/aligned", "field11_masks/*.bmp"),
         os.path.join(ROOTPATH, "190701", "1953_1_10_D2019_7_1T13_48_29_odor.h5"),
+        [
+            os.path.join(ROOTPATH, "190701", h5)
+            for h5 in [
+                "1953_1_01_D2019_7_1T11_52_7_odor.h5",
+                "1953_1_02_D2019_7_1T12_4_2_odor.h5",
+                "1953_1_03_D2019_7_1T12_17_13_odor.h5",
+                "1953_1_04_D2019_7_1T12_30_15_odor.h5",
+                "1953_1_05_D2019_7_1T12_43_18_odor.h5",
+                "1953_1_06_D2019_7_1T12_57_14_odor.h5",
+                "1953_1_07_D2019_7_1T13_9_27_odor.h5",
+                "1953_1_08_D2019_7_1T13_21_55_odor.h5",
+                "1953_1_09_D2019_7_1T13_34_54_odor.h5",
+                "1953_1_10_D2019_7_1T13_48_29_odor.h5",
+            ]
+        ][::-1],
         [
             os.path.join(
                 ROOTPATH,
@@ -62,20 +101,32 @@ trialFilePaths = {
 
 
 def test_process_and_viz_correlations(trialFilePath):
-    frameTriggers = processROI.get_flatten_trial_data(
-        trialFilePath.h5Filename, "frame_triggers", clean=True
-    )
-    trialsMeta = processROI.get_trials_metadata(trialFilePath.h5Filename)
-    session = ImagingSession(
-        trialsMeta["inh_onset"], frameTriggers, trialFilePath.h5Filename
-    )
     roiStackPattern = trialFilePath.refPattern
     maskDir = trialFilePath.maskDir
+    roiStack = TiffStack(roiStackPattern)
+    roiStack.add_masks(maskDir)
+    roiAverages = roiStack.cut_to_averages()
+    refSession = H5Session(trialFilePath.refH5Filename)
+    roiMeanFs = refSession.get_meanFs(roiAverages)
+    roiDF_Fs = {}
+    for condition in roiMeanFs:
+        roiDF_Fs[condition] = refSession.get_trial_average_data(
+            roiAverages, roiMeanFs[condition], condition
+        )
+
     savePath = trialFilePath.saveDir
     os.makedirs(savePath, exist_ok=True)
-    analyzeSession.process_and_viz_correlations(
-        roiStackPattern, trialFilePath.corPatterns, maskDir, session, savePath
-    )
+    for i_session, sessionH5 in enumerate(
+        tqdm(trialFilePath.corrH5Filenames, unit="corrSession")
+    ):
+        corrSession = H5Session(sessionH5, title=str(i_session))
+        analyzeSession.process_and_viz_correlations(
+            roiDF_Fs,
+            roiStack.masks,
+            trialFilePath.corrPatterns[i_session],
+            corrSession,
+            savePath,
+        )
 
 
 if __name__ == "__main__":

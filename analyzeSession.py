@@ -8,7 +8,8 @@ from typing import Callable, Dict, List, Mapping, Sequence, Tuple, Union
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-from matplotlib.backends.backend_pdf import PdfPages
+
+# from matplotlib.backends.backend_pdf import PdfPages
 from tqdm import tqdm, trange
 
 import processROI
@@ -21,21 +22,21 @@ logger.setLevel(logging.DEBUG)
 
 
 def process(
-    tiffPattern: str, maskDir: str, h5Filename: str
+    refPattern: str, maskDir: str, h5Filename: str
 ) -> Tuple[Dict[str, np.ndarray], ImagingSession]:
     """Process imaging session.
 
     Assembles ImagingSession and dF/F traces.
 
     Arguments:
-        tiffPattern {str} -- Path to tiff(s). Shell wildcard characters acceptable.
+        refPattern {str} -- Path to tiff(s). Shell wildcard characters acceptable.
         maskDir {str} -- Path to directory containing .bmp ROI masks.
         h5Filename {str} -- Path to h5 metadata file.
 
     Returns:
         Tuple[Dict[str, np.ndarray], ImagingSession] -- dF/Fs, ImagingSession
     """
-    timeseries = TiffStack(tiffPattern)
+    timeseries = TiffStack(refPattern)
     timeseries.add_masks(maskDir)
     ROIaverages = timeseries.cut_to_averages()
     frameTriggers = processROI.get_flatten_trial_data(
@@ -301,9 +302,21 @@ def visualize_correlation(
     savePath: str = None,
     title: str = "",
     figDims: Tuple[int, int] = (10, 9),
-    maxSubPlots: int = 16,
 ) -> List[plt.Figure]:
     sns.set(rc={"figure.figsize": figDims})
+    avgRoiSize = np.median(
+        [
+            np.sum(mask) / np.prod(correlationsByROI[i_mask].shape)
+            for i_mask, mask in enumerate(masks)
+        ]
+    )
+    gridSizes = [x ** 2 for x in range(1, 6)]
+    maxSubPlots = max(
+        filter(
+            lambda gridSize: (100 * np.prod(figDims) / 2 / gridSize * avgRoiSize) > 0.5,
+            gridSizes,
+        )
+    )
     numROI = len(correlationsByROI)
     assert len(masks) == numROI
     figs = []
@@ -321,6 +334,7 @@ def visualize_correlation(
         for i_fig, fig in enumerate(figs):
             fig.savefig(savePath + " " + str(i_fig) + ".png")
             plt.close(fig)
+        logger.info(f"{str(i_fig)} figures saved to {savePath}.")
     return figs
 
 
@@ -442,56 +456,46 @@ def subtitle(text: str) -> None:
 
 
 def process_and_viz_correlations(
-    roiStackPattern: str,
-    corStackPatterns: Sequence[str],
-    maskDir: str,
+    roiDF_Fs: Dict[str, np.ndarray],
+    roiMasks: Sequence[np.ndarray],
+    corStackPattern: str,
     session: ImagingSession,
     savePath: str,
 ):
     """Process correlation tracing imaging session.
 
     Arguments:
-        roiStackPattern {str} -- Path to tiffStack containing ROI to correlate against.
-            Shell wildcard characters acceptable. This is fed directly to TiffStack
-            constructor.
-        corStackPatterns {Sequence[str]} -- Paths to each tiffStack to correlate against
+        roiDF_Fs {Dict[str, ndarray]} -- Condition: dF/F trace.
+        roiMasks {Sequence[np.ndarray]} -- Boorlean masks for the dF/F traces
+            corresponding to each ROI.
+        corStackPattern {str} -- Pattern for the tiffStack files to correlate against
             each ROI. Shell wildcard characters acceptable. This is fed directly to
             TiffStack constructor.
-        maskDir {str} -- Path to directory containing .bmp ROI masks.
-        session {ImagingSession} -- Framing details for the session.
+        session {ImagingSession} -- Framing details for the session to correlate.
+        savePath {str} -- Path at which to save figures.
     """
-    roiStack = TiffStack(roiStackPattern)
-    roiStack.add_masks(maskDir)
-    roiAverages = roiStack.cut_to_averages()
-    roiMeanFs = session.get_meanFs(roiAverages)
-    roiDF_Fs = {}
-    for condition in roiMeanFs:
-        roiDF_Fs[condition] = session.get_trial_average_data(
-            roiAverages, roiMeanFs[condition], condition
+    logger.debug(f"Tiff stack patterns to correlate against: {corStackPattern}")
+    corrStack = TiffStack(corStackPattern)
+    pixelMeanFs = session.get_meanFs(corrStack.timeseries)
+    assert list(roiDF_Fs) == list(pixelMeanFs)
+    for condition in tqdm(pixelMeanFs, unit="condition"):
+        pixeldF_Fs = session.get_trial_average_data(
+            corrStack.timeseries, pixelMeanFs[condition], condition
         )
-    logger.debug(f"Tiff stack patterns to correlate against: {corStackPatterns}")
-    for i_stack, tiffPattern in enumerate(tqdm(corStackPatterns, unit="stack")):
-        stack = TiffStack(tiffPattern)
-        pixelMeanFs = session.get_meanFs(stack.timeseries)
-        assert list(roiMeanFs) == list(pixelMeanFs)
-        for condition in tqdm(pixelMeanFs, unit="condition"):
-            pixeldF_Fs = session.get_trial_average_data(
-                stack.timeseries, pixelMeanFs[condition], condition
+        correlationsByROI = []
+        numROI = roiDF_Fs[condition].shape[2]
+        for i_roi in trange(numROI, unit="ROI"):
+            # Average across trials
+            roiTimeseries = np.nanmean(roiDF_Fs[condition][:, :, i_roi], axis=1)
+            pixelsTimeseries = np.nanmean(pixeldF_Fs, axis=1)
+            correlationsByROI.append(
+                processROI.pixelwise_correlate(pixelsTimeseries, roiTimeseries)
             )
-            correlationsByROI = []
-            numROI = roiDF_Fs[condition].shape[2]
-            for i_roi in trange(numROI, unit="ROI"):
-                # Average across trials
-                roiTimeseries = np.nanmean(roiDF_Fs[condition][:, :, i_roi], axis=1)
-                pixelsTimeseries = np.nanmean(pixeldF_Fs, axis=1)
-                correlationsByROI.append(
-                    processROI.pixelwise_correlate(pixelsTimeseries, roiTimeseries)
-                )
-            title = "stack" + str(i_stack) + "_" + condition
-            visualize_correlation(
-                correlationsByROI,
-                roiStack.masks,
-                session.odorCodesToNames,
-                title=title,
-                savePath=os.path.join(savePath, title),
-            )
+        title = "stack" + str(session.title) + "_" + condition
+        visualize_correlation(
+            correlationsByROI,
+            roiMasks,
+            session.odorCodesToNames,
+            title=title,
+            savePath=os.path.join(savePath, title),
+        )
