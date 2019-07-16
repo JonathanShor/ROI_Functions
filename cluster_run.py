@@ -100,13 +100,15 @@ trialFilePaths = {
 }
 
 
-def test_process_and_viz_correlations(trialFilePath, window=None):
+def test_process_and_viz_correlations(
+    trialFilePath, window=None, squashCondition=False
+):
     roiStackPattern = trialFilePath.refPattern
     maskDir = trialFilePath.maskDir
     roiStack = TiffStack(roiStackPattern)
     roiStack.add_masks(maskDir)
     roiAverages = roiStack.cut_to_averages()
-    refSession = H5Session(trialFilePath.refH5Filename)
+    refSession = H5Session(trialFilePath.refH5Filename, unified=squashCondition)
     roiMeanFs = refSession.get_meanFs(roiAverages)
     roiDF_Fs = {}
     for condition in roiMeanFs:
@@ -119,7 +121,9 @@ def test_process_and_viz_correlations(trialFilePath, window=None):
     for i_session, sessionH5 in enumerate(
         tqdm(trialFilePath.corrH5Filenames, unit="corrSession")
     ):
-        corrSession = H5Session(sessionH5, title=str(i_session))
+        corrSession = H5Session(
+            sessionH5, title=str(i_session), unified=squashCondition
+        )
         analyzeSession.process_and_viz_correlations(
             roiDF_Fs,
             roiStack.masks,

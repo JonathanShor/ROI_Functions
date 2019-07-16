@@ -344,7 +344,7 @@ def plot_correlations_by_ROI(
     odorNames: Mapping[str, str],
     suptitle: str,
     selectedROIs: Sequence[int],
-    clipCorrelation: float = 0.5,  # value to clip heatmap colorbar
+    clipCorrelation: float = 1.0,  # value to clip heatmap colorbar
     colormap=sns.diverging_palette(255, 0, sep=round(0.2 * 256), as_cmap=True),
 ) -> plt.Figure:
     numPlots = len(selectedROIs)

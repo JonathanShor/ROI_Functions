@@ -17,6 +17,8 @@ class ImagingSession:
         trialAlignmentTimes {pd.Series} -- Timestamps at which to align each trial.
         frameTimestamps {Sequence[float]} -- Timestamps of each frame in tiffstack.
         h5Filename {str} -- Full filepath of h5 metadata for session.
+        unified {bool} -- Set all trials into a single condition "UNIFIED" if True.
+            (default: {False})
 
     Attributes:
         preWindowSize {int} -- Size of pre-timelock averaging window in milliseconds.
@@ -51,6 +53,7 @@ class ImagingSession:
         preWindowSize: int = 500,
         postWindowSize: int = 1500,
         title: str = "",
+        unified: bool = False,
     ) -> None:
         self.preWindowSize = preWindowSize
         self.postWindowSize = postWindowSize
@@ -77,7 +80,9 @@ class ImagingSession:
                         self.odorNamesToCodes[odor],
                     )
                 )
-            condition = self.standardize_condition_text(stimuli)
+            condition = (
+                "UNIFIED" if unified else self.standardize_condition_text(stimuli)
+            )
             if condition:
                 trialGroups[condition] = trialGroups.get(condition, []) + [i_trial]
         self.trialGroups = pd.DataFrame(data=trialGroups)
@@ -226,6 +231,7 @@ class H5Session(ImagingSession):
         preWindowSize: int = 500,
         postWindowSize: int = 1500,
         title: str = "",
+        unified: bool = False,
     ):
         frameTimestamps = processROI.get_flatten_trial_data(
             h5Filename, "frame_triggers", clean=True
@@ -238,4 +244,5 @@ class H5Session(ImagingSession):
             preWindowSize=preWindowSize,
             postWindowSize=postWindowSize,
             title=title,
+            unified=unified,
         )
