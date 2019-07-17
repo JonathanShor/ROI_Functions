@@ -3,6 +3,7 @@
 import logging
 import os
 import sys
+import warnings
 from typing import Callable, Dict, List, Mapping, Sequence, Tuple, Union
 
 import matplotlib.pyplot as plt
@@ -491,10 +492,18 @@ def process_and_viz_correlations(
         )
         correlationsByROI = []
         numROI = roiDF_Fs[condition].shape[2]
-        for i_roi in trange(numROI, unit="ROI"):
+        for i_roi in trange(numROI, desc=f"{condition}", unit="ROI"):
             # Average across trials
             roiTimeseries = np.nanmean(roiDF_Fs[condition][:, :, i_roi], axis=1)
-            pixelsTimeseries = np.nanmean(pixeldF_Fs, axis=1)
+            with warnings.catch_warnings():
+                # TODO: Catch and log numpy all-NAN warnings, instead of ignore
+                warnings.filterwarnings("ignore", category=RuntimeWarning)
+                pixelsTimeseries = np.nanmean(pixeldF_Fs, axis=1)
+            if np.isnan(pixelsTimeseries).all():
+                logger.warning(
+                    f"During session {session.title}, ROI#{i_roi}"
+                    + ", pixelsTimeseries was *all* NAN."
+                )
             if window:
                 assert len(roiTimeseries) == 60
                 roiTimeseries = roiTimeseries[window]

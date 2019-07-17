@@ -2,6 +2,7 @@
 """
 import glob
 import logging
+import os
 import sys
 import time
 from typing import List, Sequence
@@ -12,7 +13,7 @@ from tqdm import tqdm
 
 logger = logging.getLogger("TiffStack")
 logger.addHandler(logging.StreamHandler(stream=sys.stdout))
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.WARNING)
 
 
 class TiffStack:
@@ -34,7 +35,8 @@ class TiffStack:
         logger.info(f"Opening files matching tiffsPattern = {tiffsPattern}")
         tiffFNames = sorted(glob.glob(tiffsPattern))
         stacks = []
-        for fname in tqdm(tiffFNames, unit="file"):
+        filePattern = tiffsPattern.split(os.sep)[-1]
+        for fname in tqdm(tiffFNames, desc=filePattern, unit="file"):
             stacks.append(io.imread(fname))
         logger.info("Concatenating.")
         stack = np.concatenate(stacks, axis=0)

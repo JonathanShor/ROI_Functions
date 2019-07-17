@@ -1,5 +1,6 @@
 """Process ROIs
 """
+import warnings
 from typing import List, Sequence, Tuple, Union
 
 import h5py
@@ -246,9 +247,11 @@ def better_correlation(
     assert vectorLength == columnVecs.shape[0], "Column vectors must have same length."
     if columnVecs.ndim > 2:
         columnVecs = columnVecs.reshape(vectorLength, -1)
-    columnsCentered = (columnVecs - np.nanmean(columnVecs, axis=0)) / np.nanstd(
-        columnVecs, axis=0
-    )
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=RuntimeWarning)
+        columnsCentered = (columnVecs - np.nanmean(columnVecs, axis=0)) / np.nanstd(
+            columnVecs, axis=0
+        )
     return (1 / vectorLength) * np.dot((columnsCentered).T, refCentered)
 
 

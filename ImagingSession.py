@@ -1,5 +1,6 @@
 """Manages imaging session processing.
 """
+import warnings
 from typing import Dict, List, Sequence, Tuple
 
 import numpy as np
@@ -171,6 +172,10 @@ class ImagingSession:
                 for lockFrame in self.lockFrames[condition]
             ]
             meanFs[condition] = np.array(meanF)
+        if np.isnan(meanF).any():
+            warnings.warn("NaN in meanF. Corrupt signal?", category=RuntimeWarning)
+        # A meanF of zero makes no sense. Mark it so
+        meanF[meanF == 0] = np.nan
         return meanFs
 
     def get_trial_average_data(
@@ -210,7 +215,8 @@ class ImagingSession:
             ] = tempData
 
         dF_F = trialAverageData / meanF.reshape((1, numTrials) + shapeROI) - 1
-        dF_F[np.isinf(dF_F)] = np.nan
+        assert not np.isinf(dF_F).any(), "Found np.inf in dF/F"
+        # Should -1 still get stomped to np.nan, now that meanF will never be zero?
         dF_F[dF_F == -1] = np.nan
         return dF_F
 
