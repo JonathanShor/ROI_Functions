@@ -1,48 +1,11 @@
 """Process ROIs
 """
 import warnings
-from typing import List, Sequence, Tuple, Union
+from typing import List, Sequence, Union
 
 import h5py
 import numpy as np
 import pandas as pd
-
-BoxCoords = Tuple[List[int], List[int]]
-
-
-def get_bounds_index(mask: np.ndarray) -> BoxCoords:
-    """Returns coordinates of opposing (min/max each dim) corners of bounding (hyper)box.
-
-    Arguments:
-        mask {np.ndarray} -- Boolean mask.
-
-    Returns:
-        Tuple[List[int], List[int]] -- (Coords of min corner, coords of max corner)
-    """
-    maxBound = mask.shape
-    maskIndexes = mask.nonzero()
-    maxIndex = [max(i) for i in maskIndexes]
-    assert all([maski <= boundi for maski, boundi in zip(maxIndex, maxBound)])
-    minIndex = [min(i) for i in maskIndexes]
-    assert all([maski >= 0 for maski in minIndex])
-    return minIndex, maxIndex
-
-
-def get_bounding_boxes(masks: Sequence[np.ndarray]) -> List[BoxCoords]:
-    """Get ROI bounding boxes.
-
-    Arguments:
-        masks {Sequence[ndarray]} -- Sequence of binary masks.
-        FOVShape {Sequence[int]} -- Maximum index for each dimension of FOV masks reside
-            in.
-
-    Returns:
-        List[Tuple[List[int], List[int]]] -- List of bounding coordinates, each entry
-            corresponding to an ROI as defined by masks. Each entry consists of a 2-tuple,
-            the minimum coordinate corner and the maximum coordinate corner.
-    """
-    ROIs = [get_bounds_index(mask) for mask in masks]
-    return ROIs
 
 
 def get_dF_F(timeseries, width=20):
