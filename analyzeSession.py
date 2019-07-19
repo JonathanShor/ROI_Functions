@@ -457,10 +457,10 @@ def subtitle(text: str) -> None:
 
 
 def process_and_viz_correlations(
-    roiDF_Fs: Dict[str, np.ndarray],
+    roiDF_Fs: SignalByCondition,
     roiMasks: Sequence[np.ndarray],
     corrStack: TiffStack,
-    session: ImagingSession,
+    corrSession: ImagingSession,
     savePath: str,
     window: slice = None,
 ):
@@ -470,20 +470,18 @@ def process_and_viz_correlations(
         roiDF_Fs {Dict[str, ndarray]} -- Condition: dF/F trace.
         roiMasks {Sequence[np.ndarray]} -- Boorlean masks for the dF/F traces
             corresponding to each ROI.
-        corStackPattern {str} -- Pattern for the tiffStack files to correlate against
-            each ROI. Shell wildcard characters acceptable. This is fed directly to
-            TiffStack constructor.
-        session {ImagingSession} -- Framing details for the session to correlate.
+        corrStack {TiffStack} -- TiffStack to correlate against each ROI.
+        corrSession {ImagingSession} -- Framing details for the session to correlate.
         savePath {str} -- Path at which to save figures.
 
     Keyword Arguments:
         window {slice} -- Correlation will only apply within given window. Default uses
-            full window as defined by session. (default: {None})
+            full window as defined by corrSession. (default: {None})
     """
-    pixelMeanFs = session.get_meanFs(corrStack.timeseries)
-    assert list(roiDF_Fs) == list(pixelMeanFs)
+    pixelMeanFs = corrSession.get_meanFs(corrStack.timeseries)
+    assert list(roiDF_Fs) == list(pixelMeanFs), "ref and target conditions do not match"
     for condition in tqdm(pixelMeanFs, unit="condition"):
-        pixeldF_Fs = session.get_trial_average_data(
+        pixeldF_Fs = corrSession.get_trial_average_data(
             corrStack.timeseries, pixelMeanFs[condition], condition
         )
         correlationsByROI = []
@@ -497,7 +495,7 @@ def process_and_viz_correlations(
                 pixelsTimeseries = np.nanmean(pixeldF_Fs, axis=1)
             if np.isnan(pixelsTimeseries).all():
                 logger.warning(
-                    f"During session {session.title}, ROI#{i_roi}"
+                    f"During session {corrSession.title}, ROI#{i_roi}"
                     + ", pixelsTimeseries was *all* NAN."
                 )
             if window:
@@ -508,11 +506,11 @@ def process_and_viz_correlations(
             correlationsByROI.append(
                 processROI.pixelwise_correlate(pixelsTimeseries, roiTimeseries)
             )
-        title = "stack" + str(session.title) + "_" + condition
+        title = "stack" + str(corrSession.title) + "_" + condition
         visualize_correlation(
             correlationsByROI,
             roiMasks,
-            session.odorCodesToNames,
+            corrSession.odorCodesToNames,
             title=title,
             savePath=os.path.join(savePath, title),
         )
@@ -597,14 +595,13 @@ def launch_correlation(
     maskFilenames: Sequence[str],
     saveDir: str,
     savePrefix: str,
-    cluster: bool,
     corrPatternsFile: str,
     corrH5sFile: str,
     squashConditions: bool = False,
 ) -> None:
-    refSession = H5Session(h5Filename)
+    refSession = H5Session(h5Filename, unified=squashConditions)
     refStack = TiffStack(tiffFilenames, maskFilenames=maskFilenames)
-    roiDF_Fs = process_dF_Fs(refStack.cut_to_averages(), refSession)
+    refDF_Fs = process_dF_Fs(refStack.cut_to_averages(), refSession)
     saveTo = os.path.join(saveDir, savePrefix)
     os.makedirs(saveTo, exist_ok=True)
     corrH5s = read_h5s_file(corrH5sFile)
@@ -617,7 +614,7 @@ def launch_correlation(
         )
         corrStack = TiffStack(sorted(glob(corrStackPattern)))
         process_and_viz_correlations(
-            roiDF_Fs, refStack.masks, corrStack, corrSession, saveTo
+            refDF_Fs, refStack.masks, corrStack, corrSession, saveTo
         )
 
 
