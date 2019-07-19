@@ -1,9 +1,13 @@
+#!/usr/bin/env python3
 """Analyze a 2P imaging session from tiff stack, h5 metadata, and ROI masks.
 """
+import argparse
 import logging
 import os
 import sys
+import time
 import warnings
+from glob import glob
 from typing import Callable, Dict, List, Mapping, Sequence, Tuple, Union
 
 import matplotlib.pyplot as plt
@@ -14,44 +18,35 @@ import seaborn as sns
 from tqdm import tqdm, trange
 
 import processROI
-from ImagingSession import ImagingSession
+from ImagingSession import H5Session, ImagingSession
 from TiffStack import TiffStack
 
 logger = logging.getLogger("analyzeSession")
 logger.addHandler(logging.StreamHandler(stream=sys.stdout))
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
+
+SignalByCondition = Dict[str, np.ndarray]
 
 
-def process(
-    refPattern: str, maskDir: str, h5Filename: str
-) -> Tuple[Dict[str, np.ndarray], ImagingSession]:
-    """Process imaging session.
+def process_dF_Fs(timeseries: np.ndarray, session: ImagingSession) -> SignalByCondition:
+    """Produce dF/F data for given signal and session details.
 
-    Assembles ImagingSession and dF/F traces.
+    The signals are broken into conditions and timelocked to them according to session.
 
-    Arguments:
-        refPattern {str} -- Path to tiff(s). Shell wildcard characters acceptable.
-        maskDir {str} -- Path to directory containing .bmp ROI masks.
-        h5Filename {str} -- Path to h5 metadata file.
+    Args:
+        timeseries (np.ndarray): Timeframes by trial/ROI/etc.
+        session (ImagingSession): Defines what time windows belong to what conditions.
 
     Returns:
-        Tuple[Dict[str, np.ndarray], ImagingSession] -- dF/Fs, ImagingSession
+        Dict[str, np.ndarray]: condition: dF/F.
     """
-    timeseries = TiffStack(refPattern)
-    timeseries.add_masks(maskDir)
-    ROIaverages = timeseries.cut_to_averages()
-    frameTriggers = processROI.get_flatten_trial_data(
-        h5Filename, "frame_triggers", clean=True
-    )
-    trialsMeta = processROI.get_trials_metadata(h5Filename)
-    session = ImagingSession(trialsMeta["inh_onset"], frameTriggers, h5Filename)
-    meanFs = session.get_meanFs(ROIaverages, frameWindow=2)
+    meanFs = session.get_meanFs(timeseries, frameWindow=2)
     dF_Fs = {}
     for condition in meanFs:
         dF_Fs[condition] = session.get_trial_average_data(
-            ROIaverages, meanFs[condition], condition
+            timeseries, meanFs[condition], condition
         )
-    return dF_Fs, session
+    return dF_Fs
 
 
 def pick_layout(numPlots: int) -> Tuple[int, int]:
@@ -424,7 +419,10 @@ def visualize_conditions(
     for condition, dF_f in dF_Fs.items():
         i_condition += 1
         plotLocation = np.unravel_index(i_condition, layout)
-        plotData = np.nanmean(dF_Fs[condition], axis=axis, keepdims=True)
+        with warnings.catch_warnings():
+            # TODO: Catch and log numpy all-NAN warnings, instead of ignore
+            warnings.filterwarnings("ignore", category=RuntimeWarning)
+            plotData = np.nanmean(dF_Fs[condition], axis=axis, keepdims=True)
         axarr[plotLocation].title.set_text(condition + ", " + title)
         plot_dF_F_timeseries(axarr[plotLocation], lockOffset, np.squeeze(plotData))
         # Keep subplot axis labels only for edge plots; minimize figure clutter
@@ -459,10 +457,10 @@ def subtitle(text: str) -> None:
 
 
 def process_and_viz_correlations(
-    roiDF_Fs: Dict[str, np.ndarray],
+    roiDF_Fs: SignalByCondition,
     roiMasks: Sequence[np.ndarray],
-    corStackPattern: str,
-    session: ImagingSession,
+    corrStack: TiffStack,
+    corrSession: ImagingSession,
     savePath: str,
     window: slice = None,
 ):
@@ -472,22 +470,18 @@ def process_and_viz_correlations(
         roiDF_Fs {Dict[str, ndarray]} -- Condition: dF/F trace.
         roiMasks {Sequence[np.ndarray]} -- Boorlean masks for the dF/F traces
             corresponding to each ROI.
-        corStackPattern {str} -- Pattern for the tiffStack files to correlate against
-            each ROI. Shell wildcard characters acceptable. This is fed directly to
-            TiffStack constructor.
-        session {ImagingSession} -- Framing details for the session to correlate.
+        corrStack {TiffStack} -- TiffStack to correlate against each ROI.
+        corrSession {ImagingSession} -- Framing details for the session to correlate.
         savePath {str} -- Path at which to save figures.
 
     Keyword Arguments:
         window {slice} -- Correlation will only apply within given window. Default uses
-            full window as defined by session. (default: {None})
+            full window as defined by corrSession. (default: {None})
     """
-    logger.debug(f"Tiff stack patterns to correlate against: {corStackPattern}")
-    corrStack = TiffStack(corStackPattern)
-    pixelMeanFs = session.get_meanFs(corrStack.timeseries)
-    assert list(roiDF_Fs) == list(pixelMeanFs)
+    pixelMeanFs = corrSession.get_meanFs(corrStack.timeseries)
+    assert list(roiDF_Fs) == list(pixelMeanFs), "ref and target conditions do not match"
     for condition in tqdm(pixelMeanFs, unit="condition"):
-        pixeldF_Fs = session.get_trial_average_data(
+        pixeldF_Fs = corrSession.get_trial_average_data(
             corrStack.timeseries, pixelMeanFs[condition], condition
         )
         correlationsByROI = []
@@ -501,7 +495,7 @@ def process_and_viz_correlations(
                 pixelsTimeseries = np.nanmean(pixeldF_Fs, axis=1)
             if np.isnan(pixelsTimeseries).all():
                 logger.warning(
-                    f"During session {session.title}, ROI#{i_roi}"
+                    f"During session {corrSession.title}, ROI#{i_roi}"
                     + ", pixelsTimeseries was *all* NAN."
                 )
             if window:
@@ -512,11 +506,216 @@ def process_and_viz_correlations(
             correlationsByROI.append(
                 processROI.pixelwise_correlate(pixelsTimeseries, roiTimeseries)
             )
-        title = "stack" + str(session.title) + "_" + condition
+        title = "stack" + str(corrSession.title) + "_" + condition
         visualize_correlation(
             correlationsByROI,
             roiMasks,
-            session.odorCodesToNames,
+            corrSession.odorCodesToNames,
             title=title,
             savePath=os.path.join(savePath, title),
         )
+
+
+def run_condition_visualization(
+    dF_Fs: SignalByCondition,
+    session: ImagingSession,
+    axis: Union[int, Sequence[int]],
+    title: str,
+) -> plt.Figure:
+    fig = visualize_conditions(dF_Fs, session, axis=axis, title=title)
+    fig.suptitle(title)
+    return fig
+
+
+def launch_traces(
+    h5Filename: str,
+    tiffFilenames: Sequence[str],
+    maskFilenames: Sequence[str],
+    saveDir: str,
+    savePrefix: str,
+    figFileType: str = "png",
+    **kwargs,
+) -> None:
+    refStack = TiffStack(tiffFilenames, maskFilenames=maskFilenames)
+    roiAverages = refStack.cut_to_averages()
+    refSession = H5Session(h5Filename)
+    dF_Fs = process_dF_Fs(roiAverages, refSession)
+    os.makedirs(saveDir, exist_ok=True)
+    saveTo = os.path.join(saveDir, savePrefix.replace(" ", "_"))
+
+    figSettings: List[Tuple[Union[int, Sequence[int]], str]] = []
+    if kwargs["allROI"] or kwargs["allFigs"]:
+        figSettings.append((1, "All ROI"))
+    if kwargs["replicants"] or kwargs["allFigs"]:
+        figSettings.append((2, str(list(dF_Fs.values())[0].shape[1]) + " Replicants"))
+    if kwargs["crossMean"] or kwargs["allFigs"]:
+        figSettings.append(((1, 2), "Cross-trial Mean"))
+    for axis, title in tqdm(figSettings, unit="meanFig"):
+        fig = run_condition_visualization(dF_Fs, refSession, axis, title)
+        figFname = saveTo + title.replace(" ", "_") + "." + figFileType
+        fig.savefig(figFname)
+        logger.debug(f"Saved {figFname}.")
+        plt.close(fig)
+    if figSettings:
+        logger.info("Mean trace figures done.")
+
+    # TODO: Somehow unify this all into same single figSettings loop
+    if kwargs["condsROI"] or kwargs["allFigs"]:
+        figs = plot_conditions_by_ROI(dF_Fs, refSession)
+        title = "Conditions by ROI"
+        # TODO: Create figsave function to unify this
+        padding = 2 if (len(figs) > 9) else 1
+        for i_fig, fig in enumerate(tqdm(figs, unit="condROIFig")):
+            fig.suptitle(title)
+            figID = ("{:0" + str(padding) + "d}").format(i_fig)
+            figFname = saveTo + title.replace(" ", "_") + f"_{figID}.{figFileType}"
+            fig.savefig(figFname)
+            logger.debug(f"Saved {figFname}.")
+            plt.close(fig)
+        logger.info(f"Conditions by ROI figures done. {i_fig} figures produced.")
+
+    if kwargs["ROIconds"] or kwargs["allFigs"]:
+        title = "All ROI by Condition"
+        figs = plot_trials_by_ROI_per_condition(
+            dF_Fs, refSession, supTitle=title, maxSubPlots=16
+        )
+        padding = 2 if (len(figs) > 9) else 1
+        for i_fig, fig in enumerate(tqdm(figs, unit="ROIcondsFig")):
+            figID = ("{:0" + str(padding) + "d}").format(i_fig)
+            figFname = saveTo + title.replace(" ", "_") + f"_{figID}.{figFileType}"
+            fig.savefig(figFname)
+            logger.debug(f"Saved {figFname}.")
+            plt.close(fig)
+        logger.info(f"ROIs per condition figures done. {i_fig} figures produced.")
+
+
+def launch_correlation(
+    h5Filename: str,
+    tiffFilenames: Sequence[str],
+    maskFilenames: Sequence[str],
+    saveDir: str,
+    savePrefix: str,
+    corrPatternsFile: str,
+    corrH5sFile: str,
+    squashConditions: bool = False,
+) -> None:
+    refSession = H5Session(h5Filename, unified=squashConditions)
+    refStack = TiffStack(tiffFilenames, maskFilenames=maskFilenames)
+    refDF_Fs = process_dF_Fs(refStack.cut_to_averages(), refSession)
+    saveTo = os.path.join(saveDir, savePrefix)
+    os.makedirs(saveTo, exist_ok=True)
+    corrH5s = read_h5s_file(corrH5sFile)
+    corrPatterns = read_stack_patterns_file(corrPatternsFile)
+    logger.debug(f"Starting correlation analysis. Ref: {refStack._tiffFilenames[0]}")
+    for i_stack, corrStackPattern in enumerate(tqdm(corrPatterns, unit="correlation")):
+        logger.debug(f"Loading metadata from {corrH5s[i_stack]}")
+        corrSession = H5Session(
+            corrH5s[i_stack], title=str(i_stack), unified=squashConditions
+        )
+        corrStack = TiffStack(sorted(glob(corrStackPattern)))
+        process_and_viz_correlations(
+            refDF_Fs, refStack.masks, corrStack, corrSession, saveTo
+        )
+
+
+def read_h5s_file(filename: str) -> List[str]:
+    return read_stack_patterns_file(filename)
+
+
+def read_stack_patterns_file(filename: str) -> List[str]:
+    patterns: List[str] = []
+    with open(filename, mode="r") as patternsFile:
+        for line in patternsFile:
+            patterns.append(line)
+    return patterns
+
+
+def get_common_parser():
+    commonParser = argparse.ArgumentParser(add_help=False)
+    # commonParser.add_argument(
+    #     "--cluster",
+    #     action="store_true",
+    #     help="Execute via submission script to the cluster.",
+    # )
+    commonParser.add_argument(
+        "--h5",
+        dest="h5Filename",
+        required=True,
+        help="H5 file containing reference session metadata.",
+    )
+    commonParser.add_argument(
+        "-T",
+        "--tiffs",
+        dest="tiffFilenames",
+        nargs="+",
+        required=True,
+        metavar="tiffile",
+        help="List of tiff filenames, in order, that form reference stack.",
+    )
+    commonParser.add_argument(
+        "-M",
+        "--masks",
+        dest="maskFilenames",
+        nargs="+",
+        required=True,
+        metavar="maskfile",
+        help="List of ROI mask .bmp files.",
+    )
+    commonParser.add_argument("--saveDir", default="figures/")
+    commonParser.add_argument(
+        "--savePrefix", default="", help="Figure filename prefix."
+    )
+    return commonParser
+
+
+if __name__ == "__main__":
+    startTime = time.time()
+    commonParser = get_common_parser()
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers()
+
+    tracesParser = subparsers.add_parser(
+        "traces", parents=[commonParser], help="Produce trace plots."
+    )
+    tracesParser.set_defaults(func=launch_traces)
+    vizTracersGroup = tracesParser.add_argument_group("visualization")
+    vizTracersGroup.add_argument(
+        "--allROI", action="store_true", help="Produce All ROI plot."
+    )
+    vizTracersGroup.add_argument(
+        "--replicants", action="store_true", help="Produce Replicants plot."
+    )
+    vizTracersGroup.add_argument(
+        "--crossMean", action="store_true", help="Produce Cross-trial Mean plot."
+    )
+    vizTracersGroup.add_argument(
+        "--condsROI", action="store_true", help="Produce Conditions by ROI plots."
+    )
+    vizTracersGroup.add_argument(
+        "--ROIconds", action="store_true", help="Produce ROI per Conditions plots."
+    )
+    vizTracersGroup.add_argument(
+        "--all", "-A", action="store_true", dest="allFigs", help="Produce all plots."
+    )
+
+    correlationParser = subparsers.add_parser(
+        "correlation",
+        parents=[commonParser],
+        help="Produce correlation maps between tiff stacks.",
+    )
+    correlationParser.add_argument(
+        "--corrPatternsFile",
+        help="File cantaining filepath patterns (i.e. /path/to/Run0034Ref_00*.tif) for "
+        + "each tiff stack to correlate, one per line. Order must match corrH5sFile.",
+    )
+    correlationParser.add_argument(
+        "--corrH5sFile",
+        help="File cantaining filepaths for each H5, one per line. Order must match "
+        + "corrPatternsFile.",
+    )
+    correlationParser.set_defaults(func=launch_correlation)
+
+    args = parser.parse_args()
+    logger.debug(args)
+    args.func(**vars(args))
+    logger.info(f"Total run time: {time.time() - startTime:.2f} sec")
