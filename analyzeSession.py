@@ -38,7 +38,7 @@ def process_dF_Fs(timeseries: np.ndarray, session: ImagingSession) -> SignalByCo
         session (ImagingSession): Defines what time windows belong to what conditions.
 
     Returns:
-        Dict[str, np.ndarray]: condition: dF/F.
+        Dict[str, np.ndarray]: condition: dF/F. dF/F is frames by trials by ROI.
     """
     meanFs = session.get_meanFs(timeseries, frameWindow=2)
     dF_Fs = {}
@@ -385,6 +385,8 @@ def visualize_conditions(
     title="",
     figDims=(10, 9),
     palette="Reds_r",
+    sharey=False,
+    showLegend=True,
 ) -> plt.Figure:
     """Generate plots of dF/F traces by condition.
 
@@ -414,7 +416,9 @@ def visualize_conditions(
     sns.set(rc={"figure.figsize": figDims})
     numLines = max(np.mean(dF_Fs[list(dF_Fs)[0]], axis=axis, keepdims=True).shape[1:])
     sns.set_palette(palette, numLines)
-    fig, axarr = plt.subplots(layout[0], layout[1], sharex=True, squeeze=False)
+    fig, axarr = plt.subplots(
+        layout[0], layout[1], sharex=True, sharey=sharey, squeeze=False
+    )
     i_condition = -1
     for condition, dF_f in dF_Fs.items():
         i_condition += 1
@@ -430,7 +434,7 @@ def visualize_conditions(
             axarr[plotLocation].set_ylabel("")
         if i_condition < (numPlots - layout[1]):
             axarr[plotLocation].set_xlabel("")
-        if (numLines > 1) & (numLines < 10):
+        if ((numLines > 1) & (numLines < 10)) and showLegend:
             # This assigns the conditions to the legend, even tho this if statement only
             # indirectly confirms this is appropriate.
             axarr[plotLocation].legend(
@@ -527,6 +531,53 @@ def run_condition_visualization(
     return fig
 
 
+def get_best_ROI(dF_F: np.ndarray, numReturned: int) -> np.ndarray:
+    """Return bool mask corresponding to highest signal ROIs.
+
+    Means across trials, then sums absolute value of each frame to evaluate.
+
+    Args:
+        dF_F (np.ndarray): Frames by trials by ROI.
+        numReturned (int, optional): Number of ROI to return. Defaults to 10.
+
+    Returns:
+        np.ndarray: Bool mask with shape = dF_F.shape[2:].
+    """
+    strengths = np.sum(np.abs(np.mean(dF_F, axis=1)), axis=0)
+    roiShape = strengths.shape
+    bestMask = np.full(roiShape, False, dtype=np.bool)
+    bestMask[
+        np.unravel_index(np.argsort(strengths, axis=None)[-numReturned:], roiShape)
+    ] = True
+    return bestMask
+
+
+def plot_allROI_best_performers(
+    dF_Fs: SignalByCondition, session: ImagingSession, roiPerPlot: int = 5
+) -> List[plt.Figure]:
+    figs = []
+    for condition, dF_F in tqdm(
+        dF_Fs.items(), desc="All ROI, best performers", unit="fig"
+    ):
+        bestROI = get_best_ROI(dF_Fs[condition], numReturned=roiPerPlot)
+        title = f"Top {roiPerPlot}"
+        bestOnlyDF_Fs = {
+            condition: dF_F[:, :, bestROI] for condition, dF_F in dF_Fs.items()
+        }
+        fig = visualize_conditions(
+            bestOnlyDF_Fs,
+            session,
+            axis=1,
+            title=title,
+            palette="Spectral",
+            sharey=True,
+            showLegend=False,
+        )
+        fig.suptitle(f"Most Active {roiPerPlot} ROI for {condition}")
+        figs.append(fig)
+    return figs
+
+
 def save_figs(
     figs: Sequence[plt.Figure],
     title: str,
@@ -564,7 +615,12 @@ def launch_traces(
 
     figSettings: List[Tuple[Union[int, Sequence[int]], str]] = []
     if kwargs["allROI"] or kwargs["allFigs"]:
-        figSettings.append((1, "All ROI"))
+        numROI = roiAverages.shape[1]
+        if numROI <= 15:
+            figSettings.append((1, "All ROI"))
+        else:
+            figs = plot_allROI_best_performers(dF_Fs, refSession)
+            save_figs(figs, "allROI, Best Performers", saveTo, figFileType)
     if kwargs["replicants"] or kwargs["allFigs"]:
         figSettings.append((2, str(list(dF_Fs.values())[0].shape[1]) + " Replicants"))
     if kwargs["crossMean"] or kwargs["allFigs"]:
