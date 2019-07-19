@@ -527,6 +527,25 @@ def run_condition_visualization(
     return fig
 
 
+def save_figs(
+    figs: Sequence[plt.Figure],
+    title: str,
+    saveTo: str,
+    figFileType: str,
+    unit: str = "figure",
+    setSuptitle: bool = False,
+) -> None:
+    padding = 2 if (len(figs) > 9) else 1
+    for i_fig, fig in enumerate(tqdm(figs, unit=unit)):
+        if setSuptitle:
+            fig.suptitle(title)
+        figID = ("{:0" + str(padding) + "d}").format(i_fig)
+        figFname = saveTo + title.replace(" ", "_") + f"_{figID}.{figFileType}"
+        fig.savefig(figFname)
+        logger.debug(f"Saved {figFname}.")
+        plt.close(fig)
+
+
 def launch_traces(
     h5Filename: str,
     tiffFilenames: Sequence[str],
@@ -563,30 +582,16 @@ def launch_traces(
     if kwargs["condsROI"] or kwargs["allFigs"]:
         figs = plot_conditions_by_ROI(dF_Fs, refSession)
         title = "Conditions by ROI"
-        # TODO: Create figsave function to unify this
-        padding = 2 if (len(figs) > 9) else 1
-        for i_fig, fig in enumerate(tqdm(figs, unit="condROIFig")):
-            fig.suptitle(title)
-            figID = ("{:0" + str(padding) + "d}").format(i_fig)
-            figFname = saveTo + title.replace(" ", "_") + f"_{figID}.{figFileType}"
-            fig.savefig(figFname)
-            logger.debug(f"Saved {figFname}.")
-            plt.close(fig)
-        logger.info(f"Conditions by ROI figures done. {i_fig} figures produced.")
+        save_figs(figs, title, saveTo, figFileType, unit="condROIFig", setSuptitle=True)
+        logger.info(f"Conditions by ROI figures done. {len(figs)} figures produced.")
 
     if kwargs["ROIconds"] or kwargs["allFigs"]:
         title = "All ROI by Condition"
         figs = plot_trials_by_ROI_per_condition(
             dF_Fs, refSession, supTitle=title, maxSubPlots=16
         )
-        padding = 2 if (len(figs) > 9) else 1
-        for i_fig, fig in enumerate(tqdm(figs, unit="ROIcondsFig")):
-            figID = ("{:0" + str(padding) + "d}").format(i_fig)
-            figFname = saveTo + title.replace(" ", "_") + f"_{figID}.{figFileType}"
-            fig.savefig(figFname)
-            logger.debug(f"Saved {figFname}.")
-            plt.close(fig)
-        logger.info(f"ROIs per condition figures done. {i_fig} figures produced.")
+        save_figs(figs, title, saveTo, figFileType, unit="ROIcondsFig")
+        logger.info(f"ROIs per condition figures done. {len(figs)} figures produced.")
 
 
 def launch_correlation(
