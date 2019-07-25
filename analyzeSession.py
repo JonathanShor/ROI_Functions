@@ -8,7 +8,7 @@ import sys
 import time
 import warnings
 from glob import glob
-from typing import Callable, Dict, List, Mapping, Sequence, Tuple, Union
+from typing import Dict, List, Mapping, Sequence, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -38,7 +38,7 @@ def process_dF_Fs(timeseries: np.ndarray, session: ImagingSession) -> SignalByCo
         session (ImagingSession): Defines what time windows belong to what conditions.
 
     Returns:
-        Dict[str, np.ndarray]: condition: dF/F.
+        Dict[str, np.ndarray]: condition: dF/F. dF/F is frames by trials by ROI.
     """
     meanFs = session.get_meanFs(timeseries, frameWindow=2)
     dF_Fs = {}
@@ -162,21 +162,22 @@ def plot_trials_by_ROI_per_condition(
                 range(0 + ROIOffset, min(maxSubPlots + ROIOffset, numROI))
             )
             fig = create_ROI_plot(
-                lambda roi: dF_F[:, :, roi],
+                {roi: dF_F[:, :, roi] for roi in selectedROIs},
                 session.get_lock_offset(),
                 session.odorCodesToNames,
                 title,
-                selectedROIs,
                 alpha=0.8,
             )
-            fig.legend(session.trialGroups[condition], loc="lower right")
+            fig.legend(
+                session.trialGroups[condition], loc="lower right", title="Trials"
+            )
             fig.suptitle(supTitle + f" for {condition}")
             figs.append(fig)
     return figs
 
 
 def plot_conditions_by_ROI(
-    dF_Fs: Dict[str, np.ndarray],
+    dF_Fs: SignalByCondition,
     session: ImagingSession,
     title: str = "",
     figDims: Tuple[int, int] = (10, 9),
@@ -201,18 +202,19 @@ def plot_conditions_by_ROI(
     conditions = tuple(dF_Fs)
     sns.set(rc={"figure.figsize": figDims})
     sns.set_palette(palette, len(conditions))
-    dF_Fs_all = np.stack(tuple(dF_Fs.values()), axis=-1)
-    numROI = dF_Fs_all.shape[2]
+    flattenTrialsAllConditions = np.stack(
+        tuple(np.nanmean(dF_F, axis=1, keepdims=1) for dF_F in dF_Fs.values()), axis=-1
+    )
+    numROI = flattenTrialsAllConditions.shape[2]
     figs = []
     for i_fig in range(int(np.ceil(numROI / maxSubPlots))):
         ROIOffset = maxSubPlots * i_fig
         selectedROIs = list(range(0 + ROIOffset, min(maxSubPlots + ROIOffset, numROI)))
         fig = create_ROI_plot(
-            lambda roi: np.nanmean(dF_Fs_all[:, :, roi, :], axis=1, keepdims=True),
+            {roi: flattenTrialsAllConditions[:, :, roi, :] for roi in selectedROIs},
             session.get_lock_offset(),
             session.odorCodesToNames,
             title,
-            selectedROIs,
         )
         fig.legend(conditions, loc="lower right")
         figs.append(fig)
@@ -221,25 +223,21 @@ def plot_conditions_by_ROI(
 
 def create_ROI_plot(
     # plotDataGenerator's output's first dimension must match the length of frameAxis
-    plotDataGenerator: Callable[[int], np.ndarray],
+    selectedData: Mapping[int, np.ndarray],
     frameAxis: Sequence[int],
     odorNames: Mapping[str, str],
     title: str,
-    selectedROIs: Sequence[int],
-    alpha=0.8,
+    alpha: float = 0.8,
     **plotKwargs,
 ) -> plt.Figure:
     """Helper function: creates figure with subplots for each selected ROI.
 
     Arguments:
-        plotDataGenerator {Callable[[int], np.ndarray]} -- Handle to a function that
-            accepts an integer ROI # and returns the corresponding subplot data (y-axis).
-            (Example: (lambda roi: dF_F[:, :, roi]))
+        selectedData {Mapping[int, np.ndarray]} -- Mapping from ROI ID to its plot data.
         frameAxis {Sequence[int]} -- Frame index (plot x-axis labels).
         odorNames {Mapping[str, str]} -- Mapping from odor code in condition names to full
             odor name.
         title {str} -- Subplot title. Appears after ROI #.
-        selectedROIs {Sequence[int]} -- Indexes of the ROIs to plot
 
     Keyword Arguments:
         alpha {float} -- Transparency of plotted lines. (default: {0.8})
@@ -248,14 +246,15 @@ def create_ROI_plot(
     Returns:
         plt.Figure -- Resultant figure.
     """
-    numROI = len(selectedROIs)
+    numROI = len(selectedData)
     numPlots = numROI
     layout = pick_layout(numPlots)
-    fig, axarr = plt.subplots(layout[0], layout[1], sharex=True, squeeze=False)
-    for i_ROI, roi in enumerate(selectedROIs):
+    fig, axarr = plt.subplots(
+        layout[0], layout[1], sharex=True, sharey=True, squeeze=False
+    )
+    for i_ROI, (roi, plotData) in enumerate(selectedData.items()):
         plotLocation = np.unravel_index(i_ROI, layout)
         axarr[plotLocation].title.set_text("ROI #" + str(roi) + ", " + title)
-        plotData = plotDataGenerator(roi)
         plot_dF_F_timeseries(
             axarr[plotLocation],
             frameAxis,
@@ -379,12 +378,15 @@ def plot_correlations_by_ROI(
 
 
 def visualize_conditions(
-    dF_Fs: Dict[str, np.ndarray],
+    dF_Fs: SignalByCondition,
     session: ImagingSession,
     axis: Union[int, Sequence[int]],
     title="",
     figDims=(10, 9),
     palette="Reds_r",
+    sharey=True,
+    showLegend=True,
+    **kwargs,
 ) -> plt.Figure:
     """Generate plots of dF/F traces by condition.
 
@@ -414,7 +416,9 @@ def visualize_conditions(
     sns.set(rc={"figure.figsize": figDims})
     numLines = max(np.mean(dF_Fs[list(dF_Fs)[0]], axis=axis, keepdims=True).shape[1:])
     sns.set_palette(palette, numLines)
-    fig, axarr = plt.subplots(layout[0], layout[1], sharex=True, squeeze=False)
+    fig, axarr = plt.subplots(
+        layout[0], layout[1], sharex=True, sharey=sharey, squeeze=False
+    )
     i_condition = -1
     for condition, dF_f in dF_Fs.items():
         i_condition += 1
@@ -424,17 +428,19 @@ def visualize_conditions(
             warnings.filterwarnings("ignore", category=RuntimeWarning)
             plotData = np.nanmean(dF_Fs[condition], axis=axis, keepdims=True)
         axarr[plotLocation].title.set_text(condition + ", " + title)
-        plot_dF_F_timeseries(axarr[plotLocation], lockOffset, np.squeeze(plotData))
+        plot_dF_F_timeseries(
+            axarr[plotLocation], lockOffset, np.squeeze(plotData), **kwargs
+        )
         # Keep subplot axis labels only for edge plots; minimize figure clutter
         if plotLocation[1] > 0:
             axarr[plotLocation].set_ylabel("")
         if i_condition < (numPlots - layout[1]):
             axarr[plotLocation].set_xlabel("")
-        if (numLines > 1) & (numLines < 10):
+        if ((numLines > 1) & (numLines < 10)) and showLegend:
             # This assigns the conditions to the legend, even tho this if statement only
             # indirectly confirms this is appropriate.
             axarr[plotLocation].legend(
-                session.trialGroups[condition].values, ncol=2, fontsize="xx-small"
+                session.trialGroups[condition], ncol=2, fontsize="xx-small"
             )
     subtitle(
         "Legends indicate trial numbers. Odor key: "
@@ -527,6 +533,81 @@ def run_condition_visualization(
     return fig
 
 
+def get_best_ROI(dF_F: np.ndarray, numReturned: int) -> np.ndarray:
+    """Return bool mask corresponding to highest signal ROIs.
+
+    Means across trials, then sums absolute value of each frame to evaluate.
+
+    Args:
+        dF_F (np.ndarray): Frames by trials by ROI.
+        numReturned (int, optional): Number of ROI to return. Defaults to 10.
+
+    Returns:
+        np.ndarray: Bool mask with shape = dF_F.shape[2:].
+    """
+    strengths = np.nansum(np.abs(np.nanmean(dF_F, axis=1)), axis=0)
+    sorts = np.argsort(strengths, axis=None)
+    numNan = np.sum(np.isnan(strengths))
+    if numNan:
+        sorts = sorts[:-numNan]
+    bestROI = sorts[-numReturned:]
+    roiShape = strengths.shape
+    bestMask = np.full(roiShape, False, dtype=np.bool)
+    bestMask[np.unravel_index(bestROI, roiShape)] = True
+    return bestMask
+
+
+def plot_allROI_best_performers(
+    dF_Fs: SignalByCondition, session: ImagingSession, roiPerPlot: int = 5
+) -> List[plt.Figure]:
+    figs = []
+    for condition, dF_F in tqdm(
+        dF_Fs.items(), desc="All ROI, best performers", unit="fig"
+    ):
+        title = f"Top {roiPerPlot}"
+        bestROI = get_best_ROI(dF_F, numReturned=roiPerPlot)
+        bestOnlyDF_Fs = {
+            condition: dF_F[:, :, bestROI] for condition, dF_F in dF_Fs.items()
+        }
+        fig = visualize_conditions(
+            bestOnlyDF_Fs,
+            session,
+            axis=1,
+            title=title,
+            palette="Spectral",
+            sharey=True,
+            showLegend=False,
+            alpha=0.9,
+        )
+        if bestROI.ndim == 1:
+            labels = np.where(bestROI)[0]
+        else:
+            labels = zip(*np.where(bestROI))
+        fig.legend(labels=labels, loc="lower right", title="ROI#")
+        fig.suptitle(f"Most Active {roiPerPlot} ROI for {condition}")
+        figs.append(fig)
+    return figs
+
+
+def save_figs(
+    figs: Sequence[plt.Figure],
+    title: str,
+    saveTo: str,
+    figFileType: str,
+    unit: str = "figure",
+    setSuptitle: bool = False,
+) -> None:
+    padding = 2 if (len(figs) > 9) else 1
+    for i_fig, fig in enumerate(tqdm(figs, unit=unit)):
+        if setSuptitle:
+            fig.suptitle(title)
+        figID = ("{:0" + str(padding) + "d}").format(i_fig)
+        figFname = "_".join((saveTo, title.replace(" ", "_"), f"{figID}.{figFileType}"))
+        fig.savefig(figFname)
+        logger.debug(f"Saved {figFname}.")
+        plt.close(fig)
+
+
 def launch_traces(
     h5Filename: str,
     tiffFilenames: Sequence[str],
@@ -545,8 +626,14 @@ def launch_traces(
 
     figSettings: List[Tuple[Union[int, Sequence[int]], str]] = []
     if kwargs["allROI"] or kwargs["allFigs"]:
+        numROI = roiAverages.shape[1]
         figSettings.append((1, "All ROI"))
+        if numROI >= 10:
+            figs = plot_allROI_best_performers(dF_Fs, refSession)
+            save_figs(figs, "allROI, Best Performers", saveTo, figFileType)
     if kwargs["replicants"] or kwargs["allFigs"]:
+        # TODO: Update subplot figure titles to properly reflect the number of trials
+        # Currently assumes the first condition's count is correct for all
         figSettings.append((2, str(list(dF_Fs.values())[0].shape[1]) + " Replicants"))
     if kwargs["crossMean"] or kwargs["allFigs"]:
         figSettings.append(((1, 2), "Cross-trial Mean"))
@@ -563,30 +650,16 @@ def launch_traces(
     if kwargs["condsROI"] or kwargs["allFigs"]:
         figs = plot_conditions_by_ROI(dF_Fs, refSession)
         title = "Conditions by ROI"
-        # TODO: Create figsave function to unify this
-        padding = 2 if (len(figs) > 9) else 1
-        for i_fig, fig in enumerate(tqdm(figs, unit="condROIFig")):
-            fig.suptitle(title)
-            figID = ("{:0" + str(padding) + "d}").format(i_fig)
-            figFname = saveTo + title.replace(" ", "_") + f"_{figID}.{figFileType}"
-            fig.savefig(figFname)
-            logger.debug(f"Saved {figFname}.")
-            plt.close(fig)
-        logger.info(f"Conditions by ROI figures done. {i_fig} figures produced.")
+        save_figs(figs, title, saveTo, figFileType, unit="condROIFig", setSuptitle=True)
+        logger.info(f"Conditions by ROI figures done. {len(figs)} figures produced.")
 
     if kwargs["ROIconds"] or kwargs["allFigs"]:
         title = "All ROI by Condition"
         figs = plot_trials_by_ROI_per_condition(
             dF_Fs, refSession, supTitle=title, maxSubPlots=16
         )
-        padding = 2 if (len(figs) > 9) else 1
-        for i_fig, fig in enumerate(tqdm(figs, unit="ROIcondsFig")):
-            figID = ("{:0" + str(padding) + "d}").format(i_fig)
-            figFname = saveTo + title.replace(" ", "_") + f"_{figID}.{figFileType}"
-            fig.savefig(figFname)
-            logger.debug(f"Saved {figFname}.")
-            plt.close(fig)
-        logger.info(f"ROIs per condition figures done. {i_fig} figures produced.")
+        save_figs(figs, title, saveTo, figFileType, unit="ROIcondsFig")
+        logger.info(f"ROIs per condition figures done. {len(figs)} figures produced.")
 
 
 def launch_correlation(
@@ -665,6 +738,11 @@ def get_common_parser():
     commonParser.add_argument(
         "--savePrefix", default="", help="Figure filename prefix."
     )
+    commonParser.add_argument(
+        "--includeEmpty",
+        action="store_true",
+        help="Include blank trials as their own condition.",
+    )
     return commonParser
 
 
@@ -717,5 +795,13 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     logger.debug(args)
+    try:
+        if args.includeEmpty:
+            ImagingSession.IGNORE_ODORS.remove("empty")
+    except ValueError as er:
+        logger.debug(
+            f"Remove failed: 'empty' not in ImagingSession.IGNORE_ODORS.\n {er}"
+        )
+
     args.func(**vars(args))
     logger.info(f"Total run time: {time.time() - startTime:.2f} sec")

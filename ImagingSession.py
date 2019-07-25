@@ -8,8 +8,6 @@ import pandas as pd
 
 import processROI
 
-IGNORE_ODORS = ["None", "empty"]
-
 
 class ImagingSession:
     """Manages imaging session and timelock alignment.
@@ -27,24 +25,24 @@ class ImagingSession:
         postWindowSize {int} -- Size of post-timelock averaging window in milliseconds.
             (default: {1500})
         title {str} -- Title addendum for figures, if provided. (default: {""})
-        lockFrames {pd.DataFrame} -- List of frame indexes to mean around for each
-            condition.
-        preTrialTimestamps {pd.DataFrame} -- Timestamp for start of averaging windows of
+        preTrialTimestamps {Dict[str, Sequence[float]]} -- Timestamp for start of
+            averaging windows of each trial. Grouped by condition.
+        postTrialTimestamps {Dict[str, Sequence[float]]} -- Timestamp for end of averaging
+            windows of each trial. Grouped by condition.
+        trialAlignments {Dict[str, Sequence[float]]} -- Timestamp for timelock frame of
             each trial. Grouped by condition.
-        postTrialTimestamps {pd.DataFrame} -- Timestamp for end of averaging windows of
-            each trial. Grouped by condition.
-        trialAlignments {pd.DataFrame} -- Timestamp for timelock frame of each trial.
-            Grouped by condition.
-        preFrames {pd.DataFrame} -- Tiffstack frame corresponding to start of averaging
-            windows for each trial. Grouped by condition.
-        lockFrames {pd.DataFrame} -- Tiffstack frame corresponding to timelock of each
-            trial. Grouped by condition.
-        postFrames {pd.DataFrame} -- Tiffstack frame corresponding to end of averaging
-            windows for each trial. Grouped by condition.
+        preFrames {Dict[str, Sequence[int]]} -- Tiffstack frame corresponding to start of
+            averaging windows for each trial. Grouped by condition.
+        lockFrames {Dict[str, Sequence[int]]} -- Tiffstack frame corresponding to timelock
+            of each trial. Grouped by condition.
+        postFrames {Dict[str, Sequence[int]]} -- Tiffstack frame corresponding to end of
+            averaging windows for each trial. Grouped by condition.
         maxSliceWidth {int} -- Widest averaging window in frames.
         zeroFrame {int} -- The timelock frame's index in the averaging window domain
             (aka range(maxSliceWidth)).
     """
+
+    IGNORE_ODORS = ["None", "empty"]
 
     def __init__(
         self,
@@ -69,7 +67,7 @@ class ImagingSession:
             stimuli = []
             odors = [trial["olfas:olfa_0:odor"], trial["olfas:olfa_1:odor"]]
             for i_odor, odor in enumerate(odors):
-                if odor in IGNORE_ODORS:
+                if odor in self.IGNORE_ODORS:
                     continue
                 if odor not in self.odorCodesToNames.values():
                     nextCode = next(odorCodeGenerator)
@@ -86,7 +84,7 @@ class ImagingSession:
             )
             if condition:
                 trialGroups[condition] = trialGroups.get(condition, []) + [i_trial]
-        self.trialGroups = pd.DataFrame(data=trialGroups)
+        self.trialGroups = trialGroups
         self._set_timestamps(trialAlignmentTimes)
         self._set_frameWindows(frameTimestamps)
 
@@ -114,27 +112,24 @@ class ImagingSession:
         return ",".join(conditions)
 
     def _set_timestamps(self, timelocks: pd.DataFrame) -> None:
-        trialPreTimelocks = pd.DataFrame()
-        trialPostTimelocks = pd.DataFrame()
-        trialTimelocks = pd.DataFrame()
+        self.preTrialTimestamps: Dict[str, Sequence[float]] = {}
+        self.postTrialTimestamps: Dict[str, Sequence[float]] = {}
+        self.trialAlignments: Dict[str, Sequence[float]] = {}
         for condition in self.trialGroups:
-            trialPreTimelocks[condition] = (
+            self.preTrialTimestamps[condition] = (
                 timelocks.iloc[self.trialGroups[condition]].values - self.preWindowSize
             )
-            trialPostTimelocks[condition] = (
+            self.postTrialTimestamps[condition] = (
                 timelocks.iloc[self.trialGroups[condition]].values + self.postWindowSize
             )
-            trialTimelocks[condition] = timelocks.iloc[
+            self.trialAlignments[condition] = timelocks.iloc[
                 self.trialGroups[condition]
             ].values
-        self.preTrialTimestamps = trialPreTimelocks
-        self.postTrialTimestamps = trialPostTimelocks
-        self.trialAlignments = trialTimelocks
 
     def _set_frameWindows(self, frameTriggers: Sequence[float]) -> None:
-        self.preFrames = pd.DataFrame()
-        self.lockFrames = pd.DataFrame()
-        self.postFrames = pd.DataFrame()
+        self.preFrames: Dict[str, Sequence[int]] = {}
+        self.lockFrames: Dict[str, Sequence[int]] = {}
+        self.postFrames: Dict[str, Sequence[int]] = {}
         for condition in self.trialGroups:
             self.preFrames[condition] = processROI.frame_from_timestamp(
                 frameTriggers, self.preTrialTimestamps[condition]
@@ -158,7 +153,7 @@ class ImagingSession:
             frameWindow {int} -- Width of window. (default: {2})
 
         Returns:
-            {str: 2D ndarray} -- 2D, lockFrames by ROI, containing mean signal.
+            Dict[str, 2D ndarray] -- 2D, lockFrames by ROI, containing mean signal.
         """
         meanFs = {}
         for condition in self.lockFrames:
