@@ -42,20 +42,26 @@ class ImagingSession:
             (aka range(maxSliceWidth)).
     """
 
-    IGNORE_ODORS = ["None", "empty"]
+    IGNORE_ODORS: List[str] = ["None", "empty"]
+    preWindowSize: int = 500
+    postWindowSize: int = 1500
 
     def __init__(
         self,
         trialAlignmentTimes: pd.Series,
         frameTimestamps: Sequence[float],
         h5Filename: str,
-        preWindowSize: int = 500,
-        postWindowSize: int = 1500,
+        preWindowSize: int = None,
+        postWindowSize: int = None,
         title: str = "",
         unified: bool = False,
     ) -> None:
-        self.preWindowSize = preWindowSize
-        self.postWindowSize = postWindowSize
+        self.preWindowSize = (
+            self.preWindowSize if preWindowSize is None else preWindowSize
+        )
+        self.postWindowSize = (
+            self.postWindowSize if postWindowSize is None else postWindowSize
+        )
         self.title = title
 
         sessionData = processROI.get_trials_metadata(h5Filename)

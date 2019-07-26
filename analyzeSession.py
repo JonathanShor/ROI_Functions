@@ -173,6 +173,7 @@ def launch_correlation(
     corrPatternsFile: str,
     corrH5sFile: str,
     squashConditions: bool = False,
+    **kwargs,
 ) -> None:
     refSession = H5Session(h5Filename, unified=squashConditions)
     refStack = TiffStack(tiffFilenames, maskFilenames=maskFilenames)
@@ -245,6 +246,20 @@ def get_common_parser():
         action="store_true",
         help="Include blank trials as their own condition.",
     )
+    commonParser.add_argument(
+        "--preWindow",
+        type=int,
+        default=500,
+        metavar="length",
+        help="Size of pre-timelock plotting window in milliseconds. Default: 500",
+    )
+    commonParser.add_argument(
+        "--postWindow",
+        type=int,
+        default=1500,
+        metavar="length",
+        help="Size of post-timelock plotting window in milliseconds. Default: 1500",
+    )
     return commonParser
 
 
@@ -304,6 +319,8 @@ if __name__ == "__main__":
         logger.debug(
             f"Remove failed: 'empty' not in ImagingSession.IGNORE_ODORS.\n {er}"
         )
+    ImagingSession.preWindowSize = args.preWindow
+    ImagingSession.postWindowSize = args.postWindow
 
     args.func(**vars(args))
     logger.info(f"Total run time: {time.time() - startTime:.2f} sec")
