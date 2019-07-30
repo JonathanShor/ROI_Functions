@@ -18,7 +18,8 @@ class SlurmScript:
             fields that reference other arguments passed to this constructor, including
             additional keyword arguments.
         job_name (str): Name the cluster will list for the job(s) created.
-        email (str): Your notification email.
+        email (str, optional): Your notification email. If not provided, will attempt to
+            autodetect.
         nodes (int, optional): Cluster parameter. Defaults to 1.
         ntasks_per_node (int, optional): Cluster parameter. Defaults to 1.
         cpus_per_task (int, optional): Cluster parameter. Defaults to 10.
@@ -66,7 +67,7 @@ exit
         scriptFilename: str,
         payload: str,
         job_name: str,
-        email: str,
+        email: str = None,
         nodes: int = 1,
         ntasks_per_node: int = 1,
         cpus_per_task: int = 10,
@@ -79,6 +80,12 @@ exit
     ):
         self.scriptFilename = scriptFilename
         self.params = {}
+        if email is None:
+            try:
+                email = f'{os.getenv("USER")}@nyu.edu'
+            except OSError as E:
+                logger.critical("Email must be provided. Automatic detection failed.")
+                raise E
         params = locals().copy()
         del params["self"]
         del params["kwargs"]
