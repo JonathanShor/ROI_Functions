@@ -17,6 +17,7 @@ from tqdm import tqdm, trange
 import processROI
 import visualize
 from ImagingSession import H5Session, ImagingSession
+from SlurmScript import SlurmScript
 from TiffStack import TiffStack
 
 logger = logging.getLogger("analyzeSession")
@@ -206,13 +207,43 @@ def read_stack_patterns_file(filename: str) -> List[str]:
     return patterns
 
 
+def run_on_cluster(argList: List[str], clusterSetting: Union[str, bool]):
+    argList = ["python3"] + argList
+    if isinstance(clusterSetting, str):
+        # A str clusterSetting means an argument was given to the cluster flag. Remove
+        argList.pop(argList.index("--cluster") + 1)
+        if clusterSetting.lower() == "pipenv":
+            argList = ["pipenv", "run"] + argList
+    argList.remove("--cluster")
+    clusterCommand = " ".join(argList)
+    logger.debug(f"Cluster command: {clusterCommand}")
+    payload = """\
+        cd {workingDir}
+
+        {clusterCommand}
+        """
+    script = SlurmScript(
+        "submit_analyzeSession_TEMP.sh",
+        payload,
+        "analyzeSession",
+        workingDir=os.getcwd(),
+        clusterCommand=clusterCommand,
+    )
+    result = script.run()
+    logger.debug(result)
+
+
 def get_common_parser():
     commonParser = argparse.ArgumentParser(add_help=False)
-    # commonParser.add_argument(
-    #     "--cluster",
-    #     action="store_true",
-    #     help="Execute via submission script to the cluster.",
-    # )
+    commonParser.add_argument(
+        "--cluster",
+        nargs="?",
+        const=True,
+        default=False,
+        metavar="env_type",
+        help="Execute in default envirnment via submission script to the cluster."
+        + "  Use --cluster pipenv to execute in a pipenv environment.",
+    )
     commonParser.add_argument(
         "--h5",
         dest="h5Filename",
@@ -266,11 +297,16 @@ def get_common_parser():
 if __name__ == "__main__":
     startTime = time.time()
     commonParser = get_common_parser()
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="2P Imaging Processing & Analysis Pipeline"
+    )
     subparsers = parser.add_subparsers()
 
     tracesParser = subparsers.add_parser(
-        "traces", parents=[commonParser], help="Produce trace plots."
+        "traces",
+        parents=[commonParser],
+        help="Produce trace plots.",
+        description="Produces selected trace plots.",
     )
     tracesParser.set_defaults(func=launch_traces)
     vizTracersGroup = tracesParser.add_argument_group("visualization")
@@ -297,6 +333,7 @@ if __name__ == "__main__":
         "correlation",
         parents=[commonParser],
         help="Produce correlation maps between tiff stacks.",
+        description="Produces correlation maps between tiff stacks.",
     )
     correlationParser.add_argument(
         "--corrPatternsFile",
@@ -312,15 +349,18 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     logger.debug(args)
-    try:
-        if args.includeEmpty:
-            ImagingSession.IGNORE_ODORS.remove("empty")
-    except ValueError as er:
-        logger.debug(
-            f"Remove failed: 'empty' not in ImagingSession.IGNORE_ODORS.\n {er}"
-        )
-    ImagingSession.preWindowSize = args.preWindow
-    ImagingSession.postWindowSize = args.postWindow
+    if args.cluster:
+        run_on_cluster(sys.argv, args.cluster)
+    else:
+        try:
+            if args.includeEmpty:
+                ImagingSession.IGNORE_ODORS.remove("empty")
+        except ValueError as er:
+            logger.debug(
+                f"Remove failed: 'empty' not in ImagingSession.IGNORE_ODORS.\n {er}"
+            )
+        ImagingSession.preWindowSize = args.preWindow
+        ImagingSession.postWindowSize = args.postWindow
 
     args.func(**vars(args))
     logger.info(f"Total run time: {time.time() - startTime:.2f} sec")
