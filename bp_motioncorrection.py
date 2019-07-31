@@ -63,8 +63,8 @@ def make_mc_submit_script(
     return script
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+def get_mc_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument(
         "--workingDir", default=".", help="Working directory containing tifs to correct"
     )
@@ -94,8 +94,17 @@ if __name__ == "__main__":
     parser.add_argument(
         "--run", action="store_true", help="Run the submit script after creating."
     )
-    args = parser.parse_args()
+    return parser
 
-    script = make_mc_submit_script(vars(args))
+
+def main(args):
+    script = make_mc_submit_script(args)
     if args.run:
         result = script.run()
+        return result
+
+
+if __name__ == "__main__":
+    parser = get_mc_parser()
+    args = parser.parse_args()
+    main(vars(args))

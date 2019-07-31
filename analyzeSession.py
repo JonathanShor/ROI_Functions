@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm, trange
 
+import bp_motioncorrection
 import processROI
 import visualize
 from ImagingSession import H5Session, ImagingSession
@@ -106,6 +107,10 @@ def process_and_viz_correlations(
             title=title,
             savePath=os.path.join(savePath, title),
         )
+
+
+def launch_mc(**params):
+    bp_motioncorrection.main(params)
 
 
 def launch_traces(
@@ -302,6 +307,14 @@ if __name__ == "__main__":
     )
     subparsers = parser.add_subparsers()
 
+    mcParser = subparsers.add_parser(
+        "mc",
+        parents=[bp_motioncorrection.get_mc_parser()],
+        help="Motion correction for a tiff stack.",
+        description="Correct for motion artifacts in a tiff stack.",
+    )
+    mcParser.set_defaults(func=launch_mc)
+
     tracesParser = subparsers.add_parser(
         "traces",
         parents=[commonParser],
@@ -362,5 +375,5 @@ if __name__ == "__main__":
         ImagingSession.preWindowSize = args.preWindow
         ImagingSession.postWindowSize = args.postWindow
 
-    args.func(**vars(args))
+        args.func(**vars(args))
     logger.info(f"Total run time: {time.time() - startTime:.2f} sec")
