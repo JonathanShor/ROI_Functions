@@ -362,7 +362,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     logger.debug(args)
-    if args.cluster:
+    if hasattr(args, "cluster") and args.cluster:
         run_on_cluster(sys.argv, args.cluster)
     else:
         try:

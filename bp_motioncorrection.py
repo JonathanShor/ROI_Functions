@@ -99,7 +99,7 @@ def get_mc_parser() -> argparse.ArgumentParser:
 
 def main(args):
     script = make_mc_submit_script(args)
-    if args.run:
+    if args["run"]:
         result = script.run()
         return result
 
